@@ -2,6 +2,7 @@
 #        Random Walk for tick nymphs in parallel         #
 # ====================================================== #
 
+script.start <- Sys.time()
 renv::restore()
 
 library(nimble) # for building models and mcmc
@@ -122,6 +123,11 @@ for(i in seq_along(data.list.master)){
   data <- list(y = y)
   inits <- function(){list(x = y + abs(round(rnorm(length(y), 0, 4))))}
   
+  mcmc.start <- Sys.time()
+  message("=================================================")
+  message(paste("Fitting", spp, "at", plot))
+  message(paste("Start time:", mcmc.start))
+  
   source("run_nimble_parallel.R")
   cl <- makeCluster(n.cores)
   out.par <- run_nimble_parallel(cl, random_walk, constants, data, inits)
@@ -139,6 +145,11 @@ for(i in seq_along(data.list.master)){
   thin.seq <- round(seq(1, nrow(states), length.out = n.ens)) # sequence of samples to keep
 
   fx.array[ , , obs.dim, i] <- states[thin.seq, forecast.cols] # store
+  
+  mcmc.end <- Sys.time()
+  total.time <- mcmc.end - mcmc.start
+  message(paste("End time:", mcmc.end))
+  print(total.time)
 }
 
 # get vector of species names, first extract Ixodes_scapularis
@@ -216,6 +227,8 @@ dir.ncfname <- file.path("Random_Walk_Fits", as.character(forecast.issue.time))
 
 if(!dir.exists(dir.ncfname)) dir.create(dir.ncfname, recursive = TRUE)
 
+save(fit.ls, file = here(dir.ncfname, "fitALL.RData"))
+
 # Save file as CSV in the
 # [theme_name]-[yearWeek]-[team_name].csv
 fx.file.name <- paste0("ticks-", 
@@ -225,7 +238,7 @@ fx.file.name <- paste0("ticks-",
                        ".csv.gz")
 
 write.csv(fx.df,
-          file = file.path(dir.ncfname, fx.file.name))
+          file = here(dir.ncfname, fx.file.name))
 
 # jags.csv <- read.csv("../RCN_tick_population/Random_Walk_Fits/201910/random-walk-forecast-summary-jags.csv")
 # jags.fx <- jags.csv %>% 
