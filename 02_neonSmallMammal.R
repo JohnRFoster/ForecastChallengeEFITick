@@ -19,7 +19,7 @@ message("Updating NEON Small Mammal Data...")
 # neon_store("DP1.10072.001", db_dir = Sys.getenv("NEONSTORE_HOME"))
 
 # tables - can join by "nightuid"
-# plot.night <- neon_read("mam_perplotnight") # per trapping grid data
+plot.night <- neon_read("mam_perplotnight") # per trapping grid data
 trap.night <- neon_read("mam_pertrapnight") # per trap night data
 
 # bout = consecutive nights trapped
@@ -70,6 +70,20 @@ smam.bout <- smam.data %>%
   mutate(boutuid = UUIDgenerate()) %>% 
   ungroup()
 
+# pull out site/plot info for joining later
+smam.site.info <- smam.bout %>% 
+  select(all_of(c("boutuid",
+                  "collectYear",
+                  "collectMonth",
+                  "collectYearMonth",
+                  "domainID",
+                  "siteID",
+                  "plotID",
+                  "nlcdClass", # land cover classification
+                  "decimalLatitude",
+                  "decimalLongitude"))) %>% 
+  distinct(boutuid, .keep_all = TRUE)
+
 # want the number of unique animals each bout
 # will go by unique tag
 # some tags have been replaced, deal with those first
@@ -99,138 +113,48 @@ for(i in seq_along(new.tag.id)){
   }
 }
 
+# change NA in scientificName to unknown
+smam.bout$scientificName[is.na(smam.bout$scientificName)] <- "unknown sp."
 
-smam.bout %>% 
-  filter(tagID == old.tag.id[3]) %>% 
-  view()
+# get scientific names vector
+animals.names <- smam.bout %>% 
+  filter(fate != "dead") %>% # only want the animals found alive
+  pull(scientificName) %>% 
+  unique()
 
 # need to create a number animals column first before making wider
 smam.data.wide <- smam.bout %>% 
+  ungroup() %>% 
+  filter(is.na(fate) | fate != "dead") %>% # only want the animals found alive, keep NAs for 0
+  # select(-trapCoordinate) %>% 
   mutate(animalInTrap = ifelse(trapStatus == "4 - more than 1 capture in one trap" | 
                                  trapStatus == "5 - capture",
                                1, 0)) %>% 
+  group_by(boutuid) %>% 
   pivot_wider(names_from = scientificName,
               values_from = animalInTrap,
-              values_fill = 0)
+              values_fill = 0) 
 
-smam.data.wide %>% 
+# need to make sure that we only count individuals once per bout
+smam.wide.individuals <- smam.data.wide %>% 
   group_by(boutuid) %>% 
-  summarise()
-  
+  distinct(tagID, .keep_all = TRUE)
 
+# change NA column to unknown sp.
+# index <- which(colnames(smam.wide.individuals) == "NA")
+# colnames(smam.wide.individuals)[index] <- "unknown sp."
 
-replaced.tag <- smam.bout %>% 
-  filter(!is.na(replacedTag))
+# want various animal totals
+animals.by.bout <-  smam.wide.individuals %>% 
+  group_by(boutuid) %>% 
+  summarise(vars(animal.names), across(all_of(animals.names), ~ sum(.))) %>% # each animal
+  mutate(totalPeromyscus = rowSums(across(starts_with("Peromyscus")))) %>% # all Peromyscus
+  mutate(totalAnimals = rowSums(across(all_of(animals.names)))) %>%  # total animals
+  mutate(speciesRichness = rowSums(across(all_of(animals.names)) > 0))
 
-table(replaced.tag$replacedTag)
-
-
-
-
-
-# filtering out traps that were found with a dead animal
-# this also removes all the NA entries for the 'fate' column
-# which are just traps without animals because they didn't 
-# catch anything or the trap was not set
-smam.alive <- smam.data %>% filter(fate != "dead")
-
-# looks like all escaped data has an ID of some sort
-smam.escaped <- smam.data %>% filter(fate == "escaped")
-# smam.escaped %>% pull(scientificName) %>% table()
-
-
-smam.data %>% pull(recapture) %>% table()
-smam.alive %>% pull(recapture) %>% table()
-
-smam.data %>% filter(recapture == "Y") %>% pull(fate) %>% table()
-
-smam.data %>% pull(uid) %>% unique() %>% length()
-smam.data %>% pull(nightuid) %>% unique() %>% length()
-smam.data %>% pull(collectDate) %>% unique() %>% length()
-
-# need to deal with trap status
-# trap status codes:
-smam.data %>% pull(trapStatus) %>% table()
-# 1 - trap not set   
-# 2 - trap disturbed/door closed but empty 
-# 3 - trap door open or closed w/ spoor left        
-# 4 - more than 1 capture in one trap 
-# 5 - capture                     
-# 6 - trap set and empty 
-
-# 1 - trap not set  
-# want the total number of traps per trapnight that are not set
-trap.not.set <- smam.data %>% 
-  filter(trapStatus == "1 - trap not set") %>% 
-  group_by(nightuid) %>% 
-  summarise(totalTrapsNotSet = n())
-
-trap.not.set.per.bout <- smam.data %>% 
-  filter(trapStatus == "1 - trap not set") %>% 
-  group_by(plotID, collectYearMonth) %>% 
-  summarise(totalTrapsNotSet = n())
-
-# trapStatus 2 and 3 suggest an animal could be present, but we don't
-# know if the animal was captured in another trap (3) or if the disturbance
-# was from something other than an animal (2). So, not going to assume
-# these are animals
-trap.empty <- smam.data %>% 
-  filter(trapStatus == "2 - trap disturbed/door closed but empty" |
-           trapStatus == "3 - trap door open or closed w/ spoor left" |
-           trapStatus == "6 - trap set and empty")
-
-# these records map to same nightuid and trap with different tagIDs
-# want total animals in traps
-trap.two.or.more <- smam.data %>% 
-  filter(trapStatus == "4 - more than 1 capture in one trap") %>% 
-  group_by(nightuid) %>% 
-  summarise(animalsAlive = n())
-
-captures <- smam.data %>% 
-  filter(trapStatus == "5 - capture")
-
-
-# first thing I want is total animal caught
-total.animals <- smam.data %>% 
-  filter(trapStatus == "4 - more than 1 capture in one trap" |
-           trapStatus == "5 - capture") %>%
-  group_by(nightuid) %>% 
-  summarise(totalAnimalsObserved = n())
-
-total.animals.per.bout <- smam.data %>% 
-  filter(trapStatus == "4 - more than 1 capture in one trap" |
-           trapStatus == "5 - capture") %>%
-  group_by(plotID, collectYearMonth) %>% 
-  summarise(totalAnimalsObserved = n())
-
-
-
-
-
-smam.data.restructure <- left_join(smam.data, total.animals, by = "nightuid")
-
-
-
-
-
-
-# we know that codes 5 and 6 represent good efforts and are easiest to deal with
-
-# measures we may want to use
-# minimum number of hosts alive each trapping bout
-# density of all hosts alive at each trapping bout
-# species richness at each trapping bout
-# total number Peromyscus alive at each trapping bout
-# Peromyscus density alive at each trapping bout 
-
-
-
-
-
-
-
-
+# join
+smam.final <- left_join(animals.by.bout, smam.site.info, by = "boutuid")
 
 write_csv(smam.data, "Data/smallMammalTrapNightRaw.csv")
-write_csv(smam.data, "Data/smallMammalTrapNightRaw.csv")
-write_csv(smam.data, "Data/smallMammalTrapNightRaw.csv")
+write_csv(smam.final, "Data/smallMammalAnimalsByBout.csv")
+
