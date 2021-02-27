@@ -1,6 +1,7 @@
 # ====================================================== #
 #        plot effect for plots within sites              #
-#        Using a zero-inflated Poisson data model        #
+#        Using a normal-normal state-space model         #
+#        Using tick density per trapping (1600^m-2)      #
 # ====================================================== #
 
 script.start <- Sys.time()
