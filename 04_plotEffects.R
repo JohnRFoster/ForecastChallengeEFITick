@@ -24,7 +24,7 @@ data.ambloyoma <- split_species("Amblyomma")
 sites.ixodes <- unique(data.ixodes$siteID)
 sites.amblyomma <- unique(data.ambloyoma$siteID)
 
-# restucture data to have plots combined by site
+# restructure data to have plots combined by site
 ls.ixodes <- list()
 for(i in seq_along(sites.ixodes)){
   subset.df <- data.ixodes %>% 
@@ -36,7 +36,7 @@ for(i in seq_along(sites.ixodes)){
     mutate(density = Ixodes_scapularis / totalSampledArea * 1600) %>%
     pivot_wider(id_cols = c(yearWeek, time), 
                 names_from = plotID, 
-                values_from = Ixodes_scapularis) %>% 
+                values_from = density) %>% 
     arrange(yearWeek)
   
   ls.ixodes[[i]] <- subset.df
