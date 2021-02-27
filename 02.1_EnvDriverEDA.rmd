@@ -1,0 +1,337 @@
+---
+title: "Tick_EDA"
+author: "John Foster"
+date: "2/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+ixodes.plots <- c(
+  "BLAN_012",
+  "BLAN_005",
+  "SCBI_013",
+  "SCBI_002",
+  "SERC_001",
+  "SERC_005",
+  "SERC_006",
+  "SERC_012",
+  "ORNL_007"  
+)
+
+ambloyomma.plots <- c(
+  "SCBI_013",
+  "SERC_001",
+  "SERC_005",
+  "SERC_006",
+  "SERC_002",
+  "SERC_012",
+  "KONZ_025",
+  "UKFS_001",
+  "UKFS_004",
+  "UKFS_003",
+  "ORNL_002",
+  "ORNL_040",
+  "ORNL_008",
+  "ORNL_007",
+  "ORNL_009",
+  "ORNL_003",
+  "TALL_001",
+  "TALL_008",
+  "TALL_002"
+)
+```
+
+
+```{r data}
+
+tick.data <- read.csv("Data/ticks-targets.csv.gz")
+tick.data <- tick.data %>% 
+  select(-all_of(c("RHMin_precent",
+                   "RHMin_variance",
+                   "RHMax_precent",
+                   "RHMax_variance",
+                   "airTempMin_degC",
+                   "airTempMin_variance",
+                   "airTempMax_degC",
+                   "airTempMax_variance")))
+
+data.ixodes <- tick.data %>% 
+  filter(plotID %in% ixodes.plots) %>% 
+  select(-Ambloyomma_americanum) %>% 
+  group_by(plotID) %>%
+  distinct(yearWeek, Ixodes_scapularis, .keep_all = TRUE) %>% 
+  mutate(indicator = !yearWeek %in% yearWeek[duplicated(yearWeek)]) %>% 
+  filter(Ixodes_scapularis >= 0 | indicator)
+
+data.ambloyoma <- tick.data %>% 
+  filter(plotID %in% ambloyomma.plots) %>% 
+  select(-Ixodes_scapularis) %>% 
+  group_by(plotID) %>%
+  distinct(yearWeek, Ambloyomma_americanum, .keep_all = TRUE) %>% 
+  mutate(indicator = !yearWeek %in% yearWeek[duplicated(yearWeek)]) %>% 
+  filter(Ambloyomma_americanum >= 0 | indicator)
+
+ggplot(data.ixodes) +
+  geom_point(aes(x = time, y = Ixodes_scapularis, color = plotID, group = plotID))
+ggplot(data.ambloyoma) +
+  geom_point(aes(x = time, y = Ambloyomma_americanum, color = plotID, group = plotID))
+
+
+
+```
+
+## Relative Humidity
+
+You can also embed plots, for example:
+
+```{r rh}
+
+read_data_combine <- function(path, species.data){
+  new.data <- read.csv(path)
+  new.data <- new.data %>% 
+  mutate(yearWeek = gsub("-", "", yearWeek)) %>% 
+  mutate(yearWeek = as.integer(yearWeek))
+  
+  data.join <- left_join(species.data, new.data,
+                            by = c("siteID", "yearWeek", "Year", "epiWeek"))
+}
+
+data.rh.ixodes <- read_data_combine("Data/RelativeHumidityWeekly.csv", data.ixodes)
+data.rh.amblyoma <- read_data_combine("Data/RelativeHumidityWeekly.csv", data.ambloyoma)
+
+# df.ixodes %>% 
+#   filter(plotID == "SCBI_013")  %>% 
+#   select(c(yearWeek, Ixodes_scapularis, RHMaximum, indicator))
+
+
+ggplot(data.rh.ixodes) +
+  geom_point(aes(x = RHMaximum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly Max RH")
+
+ggplot(data.rh.ixodes) +
+  geom_point(aes(x = RHMinimum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly Min RH")
+
+ggplot(data.rh.amblyoma) +
+  geom_point(aes(x = RHMaximum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly Max RH")
+
+ggplot(data.rh.amblyoma) +
+  geom_point(aes(x = RHMinimum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly Min RH")
+
+```
+
+## IR Biological Temp
+
+```{r bio temp}
+
+data.bioTemp.ixodes <- read_data_combine("Data/BioTemperatureWeekly.csv", data.ixodes)
+data.bioTemp.amblyoma <- read_data_combine("Data/BioTemperatureWeekly.csv", data.ambloyoma)
+
+ggplot(data.bioTemp.ixodes) +
+  geom_point(aes(x = bioTempMinimum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly min bio temp")
+
+ggplot(data.bioTemp.ixodes) +
+  geom_point(aes(x = bioTempMaximum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly max bio temp")
+
+ggplot(data.bioTemp.amblyoma) +
+  geom_point(aes(x = bioTempMinimum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly min bio temp")
+
+ggplot(data.bioTemp.amblyoma) +
+  geom_point(aes(x = bioTempMaximum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly max bio temp")
+
+
+daily.bio.temp <- read_csv("Data/BioTemperatureDaily.csv")
+bio.temp.gdd <- daily.bio.temp %>% 
+  group_by(siteID, Year) %>% 
+  mutate(growingDegree = if_else(bioTempMaximum > 0, bioTempMaximum, 0)) %>% 
+  mutate(cumGDD = cumsum(growingDegree)) %>% 
+  mutate(time = as.character(Date))
+
+gdd.ixodes <- left_join(data.ixodes, bio.temp.gdd,
+                        by = c("siteID", "time"))
+gdd.amblyomma <- left_join(data.ambloyoma, bio.temp.gdd,
+                        by = c("siteID", "time"))
+
+ggplot(bio.temp.gdd) +
+  geom_point(aes(x = Date, y = growingDegree)) +
+  facet_wrap(facets = vars(siteID), scales = "free") +
+  labs(title = "growing degrees all sites")
+
+ggplot(bio.temp.gdd) +
+  geom_point(aes(x = Date, y = cumGDD)) +
+  facet_wrap(facets = vars(siteID), scales = "free") +
+  labs(title = "cum. growing degrees all sites")
+
+ggplot(gdd.ixodes) +
+  geom_point(aes(x = growingDegree, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - growing degrees")
+
+ggplot(gdd.ixodes) +
+  geom_point(aes(x = cumGDD, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - cum. growing degrees")
+
+ggplot(gdd.amblyomma) +
+  geom_point(aes(x = growingDegree, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ambloyomma - growing degrees")
+
+ggplot(gdd.amblyomma) +
+  geom_point(aes(x = cumGDD, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ambloyomma - cum. growing degrees")
+
+
+
+```
+
+## Air Temp
+
+```{r air temp}
+
+data.airTemp.ixodes <- read_data_combine("Data/AirTemperatureWeekly.csv", data.ixodes)
+data.airTemp.amblyoma <- read_data_combine("Data/AirTemperatureWeekly.csv", data.ambloyoma)
+
+ggplot(data.airTemp.ixodes) +
+  geom_point(aes(x = tempTripleMinimum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly min air temp")
+
+ggplot(data.airTemp.ixodes) +
+  geom_point(aes(x = tempTripleMaximum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly max air temp")
+
+ggplot(data.airTemp.amblyoma) +
+  geom_point(aes(x = tempTripleMinimum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly air temp")
+
+ggplot(data.airTemp.amblyoma) +
+  geom_point(aes(x = tempTripleMaximum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly air temp")
+
+daily.air.temp <- read_csv("Data/AirTemperatureDaily.csv")
+air.temp.gdd <- daily.air.temp %>% 
+  group_by(siteID, Year) %>% 
+  mutate(growingDegree = if_else(tempTripleMaximum > 0, tempTripleMaximum, 0)) %>% 
+  mutate(cumGDD = cumsum(growingDegree)) %>% 
+  mutate(time = as.character(Date))
+
+gdd.ixodes <- left_join(data.ixodes, air.temp.gdd,
+                        by = c("siteID", "time"))
+gdd.amblyomma <- left_join(data.ambloyoma, air.temp.gdd,
+                        by = c("siteID", "time"))
+
+ggplot(air.temp.gdd) +
+  geom_point(aes(x = Date, y = growingDegree)) +
+  facet_wrap(facets = vars(siteID), scales = "free") +
+  labs(title = "growing degrees all sites")
+
+ggplot(air.temp.gdd) +
+  geom_point(aes(x = Date, y = cumGDD)) +
+  facet_wrap(facets = vars(siteID), scales = "free") +
+  labs(title = "cum. growing degrees all sites")
+
+ggplot(gdd.ixodes) +
+  geom_point(aes(x = growingDegree, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - growing degrees")
+
+ggplot(gdd.ixodes) +
+  geom_point(aes(x = cumGDD, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - cum. growing degrees")
+
+ggplot(gdd.amblyomma) +
+  geom_point(aes(x = growingDegree, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ambloyomma - growing degrees")
+
+ggplot(gdd.amblyomma) +
+  geom_point(aes(x = cumGDD, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ambloyomma - cum. growing degrees")
+
+
+
+```
+
+ need to do degree days (or cumulative deg days)
+
+## Soil Temp
+
+```{r soil temp}
+
+data.soilTemp.ixodes <- read_data_combine("Data/SoilTemperatureWeekly.csv", data.ixodes)
+data.soilTemp.amblyoma <- read_data_combine("Data/SoilTemperatureWeekly.csv", data.ambloyoma)
+
+ggplot(data.soilTemp.ixodes) +
+  geom_point(aes(x = soilTempMinimum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly min soil temp")
+
+ggplot(data.soilTemp.ixodes) +
+  geom_point(aes(x = soilTempMaximum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly max soil temp")
+
+ggplot(data.soilTemp.amblyoma) +
+  geom_point(aes(x = soilTempMinimum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly soil temp")
+
+ggplot(data.soilTemp.amblyoma) +
+  geom_point(aes(x = soilTempMaximum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly soil temp")
+```
+
+
+
+## Soil Water Content
+
+```{r soil water}
+
+data.soilWater.ixodes <- read_data_combine("Data/SoilWaterContentWeekly.csv", data.ixodes)
+data.soilWater.amblyoma <- read_data_combine("Data/SoilWaterContentWeekly.csv", data.ambloyoma)
+
+ggplot(data.soilWater.ixodes) +
+  geom_point(aes(x = VSWCMinimum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly min soil water")
+
+ggplot(data.soilWater.ixodes) +
+  geom_point(aes(x = VSWCMaximum, y = Ixodes_scapularis)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Ixodes - Weekly max soil water")
+
+ggplot(data.soilWater.amblyoma) +
+  geom_point(aes(x = VSWCMinimum, y = Ambloyomma_americanum)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly soil water")
+
+ggplot(data.soilWater.amblyoma) +
+  geom_point(aes(x = VSWCMaximum, y = Ambloyomma_americanum,)) +
+  facet_wrap(facets = vars(plotID), scales = "free") +
+  labs(title = "Amblyomma - Weekly soil water")
+```
