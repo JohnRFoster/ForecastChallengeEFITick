@@ -40,6 +40,8 @@ for(i in seq_along(sites.ixodes)){
                 values_from = density) %>% 
     arrange(yearWeek)
   
+  if(ncol(subset.df) == 3) next
+  
   ls.ixodes[[i]] <- subset.df
 }
 
@@ -58,7 +60,7 @@ for(i in seq_along(sites.amblyomma)){
                 values_fn = {max},
                 values_from = density) %>% 
     arrange(yearWeek)
-  
+  if(ncol(subset.df) == 3) next
   ls.amblyomma[[i]] <- subset.df
 }
 
@@ -69,7 +71,8 @@ ls.amblyomma <- set_names(ls.amblyomma,
                           paste("Amblyomma_americanum", sites.amblyomma, sep = "_"))
 
 # combine
-data.list.master <- prepend(ls.amblyomma, ls.ixodes)
+data.list.master <- prepend(ls.ixodes, ls.amblyomma)
+data.list.master <- purrr::compact(data.list.master)
 
 # par(mfrow = c(2, 5))
 # for(jj in seq_along(data.list.master)){
@@ -80,36 +83,69 @@ data.list.master <- prepend(ls.amblyomma, ls.ixodes)
 
 # source("Functions/ZIP.R") 
 model <- nimbleCode({
-  
-  # process error prior
-  tau.process ~ dgamma(1, 1)
-  
-  # observation error prior
-  tau.obs ~ dgamma(1, 1)
-  
+
+  # priors
+  sd.process ~ dgamma(10, 1) # process error
+  sd.obs ~ dgamma(10, 1) # observation error
+  sd.plot ~ dgamma(10, 1) # plot error
+  mu ~ dnorm(0, sd = 5)
+
   # data model, density so using dnorm
   for(s in 1:n.sites){
     for(t in 1:n.weeks){
-      y[t, s] ~ dnorm(z[t, s], tau = tau.obs)
-    }  
+      y[t, s] ~ dnorm(z[t, s], sd = sd.obs)
+    }
   }
-  
+
   # process model
   for(s in 1:n.sites){
-    
+
     # plot effect prior
-    plot.effect[s] ~ dnorm(0, tau = 0.001)
-    
+    plot.effect[s] ~ dnorm(0, sd = sd.plot)
+
     # first state gets it's own prior
     z[1, s] ~ dnorm(x.ic[s], sd = 10)
-    
+
     for(t in 2:n.weeks){
-      mu[t-1, s] <- z[t-1, s] + plot.effect[s]
-      ex[t, s] ~ dnorm(mu[t-1, s], tau = tau.process)
-      z[t, s] <- max(0, ex[t, s])
+      ex[t-1, s] <- mu + plot.effect[s]
+      x[t, s] ~ dnorm(ex[t-1, s], sd = sd.process)
+      z[t, s] <- max(0, x[t, s])
     }
   }
 })
+monitor <- c("sd.process", "sd.obs", "sd.plot", "z", "plot.effect", "mu")
+
+# model <- nimbleCode({
+#   
+#   # priors
+#   sd.process ~ dgamma(10, 1) # process error
+#   # pi ~ dunif(0, 1) # probability of structural zero 
+#   sd.plot ~ dgamma(10, 1) # plot error 
+#   
+#   # data model, counts so poisson
+#   for(s in 1:n.sites){
+#     for(t in 1:n.weeks){
+#       y[t, s] ~ dpois(z[t, s])
+#     }  
+#   }
+#   
+#   # process model
+#   for(s in 1:n.sites){
+#     
+#     # plot effect prior
+#     plot.effect[s] ~ dnorm(0, sd = sd.plot)
+#     
+#     # first state gets it's own prior
+#     z[1, s] ~ dpois(x.ic[s])
+#     
+#     for(t in 2:n.weeks){
+#       mu[t-1, s] <- z[t-1, s] + plot.effect[s]
+#       ex[t, s] ~ dnorm(mu[t-1, s], sd = sd.process)
+#       z[t, s] <- max(0, ex[t, s])
+#     }
+#   }
+# })
+# monitor <- c("sd.process", "sd.plot", "z", "plot.effect")
 
 source("Functions/target_weeks.R")
 day.run <- today()
@@ -140,73 +176,84 @@ for(i in seq_along(data.list.master)){
   df <- pluck(data.list.master, i)
   
   y <- select(df, matches("\\d{3}"))
-  
-  # n.weeks the number of weeks to forecast into the future
-  # need to pad df to make the forecast in jags
-  na.pad <- matrix(NA, length(target.weeks), ncol(y))
-  colnames(na.pad) <- colnames(y)
-  group.names[[i]] <- colnames(y)
-  y <- rbind(y, na.pad)
-  
-  constants <- list(n.weeks = nrow(y),
-                    n.sites = ncol(y),
-                    x.ic = 10 + rnorm(ncol(y), 40, 10))
-  
-  data <- list(y = y)
+  pi.init <- sum(is.na(y)) / (nrow(y) * ncol(y))
   
   y.means <- colMeans(y, na.rm = TRUE)
   y.sd <- apply(y, 2, sd, na.rm = TRUE)
   mu.inits <- y
   for(cc in 1:ncol(y)){
     na.rows <- which(is.na(mu.inits[,cc]))
-    mu.inits[na.rows, cc] <- pmax(100, rnorm(length(na.rows), y.means[cc], y.sd[cc]))  
+    mu.inits[na.rows, cc] <- round(approx(pull(mu.inits, cc), xout = na.rows)$y)
   }
   
-  inits <- function(){list(mu = apply(mu.inits, 2, jitter),
-                           z = apply(mu.inits, 2, jitter),
-                           tau.process = rgamma(1, 1, 1),
-                           tau.obs = rgamma(1, 1, 1),
-                           plot.effect = rnorm(ncol(y), 0, 1))}
+  # n.weeks the number of weeks to forecast into the future
+  # need to pad df to make the forecast in jags
+  # na.pad <- matrix(NA, length(target.weeks), ncol(y))
+  # colnames(na.pad) <- colnames(y)
+  # group.names[[i]] <- colnames(y)
+  # y <- rbind(y, na.pad)
   
-  # init <- inits()
-  # model.rw <- nimbleModel(model,
-  #                         constants = constants,
-  #                         data = data,
-  #                         inits = init)
-  # cModel.rw <- compileNimble(model.rw)
-  # mcmcConf <- configureMCMC(cModel.rw)
-  # mcmcBuild <- buildMCMC(mcmcConf)
+  constants <- list(n.weeks = nrow(y),
+                    n.sites = ncol(y),
+                    x.ic = c(1 + rpois(ncol(y), 5), 0))
+  
+  data <- list(y = y)
+  
+  # lets say 2019 was like 2018 for inits
+  # need to add more explicit matching for when challenge starts
+  # na.fill <- mu.inits[(nrow(mu.inits)-length(target.weeks)+1):nrow(mu.inits),]
+  # mu.inits <- rbind(mu.inits, na.fill)
+  
+  inits <- function(){list(y = mu.inits,
+                           z = abs(apply(mu.inits, 2, jitter)) + 1,
+                           # tau.process = rgamma(1, 1, 3),
+                           # pi = pi.init,
+                           # tau.plot = rgamma(1, 1, 3),
+                           plot.effect = rnorm(ncol(data$y), 0, 1)
+                           )}
+  
+  init <- inits()
+  model.rw <- nimbleModel(model,
+                          constants = constants,
+                          data = data,
+                          inits = init)
+  cModel.rw <- compileNimble(model.rw)
+  mcmcConf <- configureMCMC(cModel.rw, monitors = monitor)
+  mcmcBuild <- buildMCMC(mcmcConf)
+  mcmcBuild$run(1)
   # compMCMC <- compileNimble(mcmcBuild)
   # out.1 <- runMCMC(compMCMC, niter = 100000)
   
   mcmc.start <- Sys.time()
   message("=================================================")
   message(paste("Fitting", names(data.list.master[i])))
+  message(paste("Model", i, "of", length(data.list.master)))
   message(paste("Start time:", mcmc.start))
   
   source("Functions/run_nimble_parallel.R")
   cl <- makeCluster(n.cores)
-  samples <- run_nimble_parallel(cl, model, constants, data, inits, 
-                                 use.dzip = FALSE)
+  samples <- run_nimble_parallel(cl, model, constants, data, inits, monitor,
+                                 use.dzip = FALSE, check.params.only = TRUE)
   stopCluster(cl)  
   
   fit.ls[[i]] <- samples # save everything for later analysis
+  print(apply(samples[,1:8], 2, quantile, c(0.025, 0.5, 0.975)))
   
   # extract forecast period 
-  forecast.index <- (nrow(df)+1):nrow(y) 
-  forecast.cols <- paste0("z[", forecast.index)
-  forecast.samps <- samples %>% 
-    as_tibble() %>% 
-    select(starts_with(forecast.cols))
+  # forecast.index <- (nrow(df)+1):nrow(y) 
+  # forecast.cols <- paste0("z[", forecast.index)
+  # forecast.samps <- samples %>% 
+  #   as_tibble() %>% 
+  #   select(starts_with(forecast.cols))
   
   # columns that represent the forecast
   
   # fx.array[ , , obs.dim, i] <- states[thin.seq, forecast.cols] # store
   
-  mcmc.end <- Sys.time()
-  total.time <- mcmc.end - mcmc.start
-  message(paste("End time:", mcmc.end))
-  print(total.time)
+  # mcmc.end <- Sys.time()
+  # total.time <- mcmc.end - mcmc.start
+  # message(paste("End time:", mcmc.end))
+  # print(total.time)
 }
 
 fit.ls <- set_names(fit.ls, names(data.list.master))
