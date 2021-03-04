@@ -45,7 +45,7 @@ smam.data <- trap.night %>%
                   "collectYearMonth",
                   "domainID",
                   "siteID",
-                  "plotID",
+                  # "plotID",
                   "nlcdClass", # land cover classification
                   "decimalLatitude",
                   "decimalLongitude",
@@ -66,7 +66,7 @@ smam.data <- trap.night %>%
 
 # generate a uuid for bouts
 smam.bout <- smam.data %>% 
-  group_by(plotID, collectYearMonth) %>% 
+  group_by(siteID, collectYearMonth) %>% 
   mutate(boutuid = UUIDgenerate()) %>% 
   ungroup()
 
@@ -78,7 +78,7 @@ smam.site.info <- smam.bout %>%
                   "collectYearMonth",
                   "domainID",
                   "siteID",
-                  "plotID",
+                  # "plotID",
                   "nlcdClass", # land cover classification
                   "decimalLatitude",
                   "decimalLongitude"))) %>% 
@@ -94,7 +94,7 @@ smam.site.info <- smam.bout %>%
 
 # arrange by collect date to make replacing easier
 smam.bout <- smam.bout %>% 
-  group_by(plotID) %>% 
+  group_by(siteID) %>% 
   arrange(collectDate)
 
 tag.pattern <- "[[:upper:]]\\d{4}" # end of tagID - what is replaced; old tag
