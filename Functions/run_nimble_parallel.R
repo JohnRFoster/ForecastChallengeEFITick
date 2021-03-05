@@ -1,7 +1,7 @@
 
 
 run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file.name = NA,
-                                use.dzip = FALSE, n.ens = 5000, check.interval = 10,
+                                use.dzip = FALSE, n.ens = 5000, check.interval = 10, thin = 1,
                                 n.iter = 50000, n.burnin = 5000, psrf.max = 1.1, max.iter = 3e6,
                                 check.params.only = FALSE){
   library(parallel)
@@ -17,11 +17,12 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
     assign("rZIP", rZIP, envir = .GlobalEnv)
     clusterExport(cl, 
                   c("model", "constants", "data", "inits", "n.iter", "n.burnin",
-                    "dZIP", "rZIP", "monitor"),
+                    "dZIP", "rZIP", "monitor", "thin"),
                   envir = environment())  
   } else {
     clusterExport(cl, 
-                  c("model", "constants", "data", "inits", "n.iter", "n.burnin", "monitor"),
+                  c("model", "constants", "data", "inits", 
+                    "n.iter", "n.burnin", "monitor", "thin"),
                   envir = environment()) 
   }
   
@@ -42,7 +43,9 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
                             data = data,
                             inits = init)
     cModel.rw <- compileNimble(model.rw)
-    mcmcConf <- configureMCMC(cModel.rw, monitors = monitor)
+    mcmcConf <- configureMCMC(cModel.rw, 
+                              monitors = monitor,
+                              thin = thin)
     mcmcBuild <- buildMCMC(mcmcConf)
     compMCMC <- compileNimble(mcmcBuild)
     out.1 <- runMCMC(compMCMC, niter = n.iter, nburnin = n.burnin)
@@ -52,7 +55,7 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
    
   if(check.params.only){  
     message("Checking convergence on parameters only")
-    check.mcmc <- out.mcmc[,-grep("z[", colnames(out.mcmc[[1]]), fixed = TRUE), drop = TRUE]
+    check.mcmc <- out.mcmc[,-grep("x[", colnames(out.mcmc[[1]]), fixed = TRUE), drop = TRUE]
   } else {
     message("Checking convergence on parameters and states")
     check.mcmc <- out.mcmc
@@ -82,7 +85,7 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
     out.mcmc <- as.mcmc.list(out.mcmc.bind)
     if(check.params.only){  
       message("Checking convergence on parameters only")
-      check.mcmc <- out.mcmc[,-grep("z[", colnames(out.mcmc[[1]]), fixed = TRUE), drop = TRUE]
+      check.mcmc <- out.mcmc[,-grep("x[", colnames(out.mcmc[[1]]), fixed = TRUE), drop = TRUE]
     } else {
       message("Checking convergence on parameters and states")
       check.mcmc <- out.mcmc
