@@ -17,14 +17,16 @@ library(parallel) # for running models in parallel
 library(ISOweek) # to convert year-weeks to date
 
 # where do we want random effects?
-species.effect <- TRUE
+species.effect <- FALSE
 site.effect <- FALSE
 year.effect <- FALSE
 
 # n.cores <- as.numeric(Sys.getenv("NSLOTS")) # number of cores to use for cluster 
 n.cores <- 3
 
-ForecastProject.id <- "groupEffects"     # Some ID that applies to a set of forecasts
+source("Models/yearTimeSeriesBasic.R")
+
+ForecastProject.id <- "yearTimeSeriesBasic"     # Some ID that applies to a set of forecasts
 out.dir <- here("ModelOut", ForecastProject.id)
 if(!dir.exists(out.dir)) dir.create(out.dir)
 
@@ -70,105 +72,74 @@ species.vec <- c(rep("ixodes", length(plots.ixodes)), rep("amblyomma", length(pl
 plot.vec <- stringr::str_extract(ids, "[[:upper:]]{4}_\\d{3}")
 site.vec <- stringr::str_extract(ids, "[[:upper:]]{4}")
 
-# convert grouings to numeriv vectors
+# convert groupings to numeric vectors
 year.vec <- year(wide.data$time) - min(year(wide.data$time)) + 1
 species.vec <- as.factor(species.vec) %>% as.numeric()
 plot.vec <- as.factor(plot.vec) %>% as.numeric()
 site.vec <- as.factor(site.vec) %>% as.numeric()
 
-model <- nimbleCode({
-  
-  # priors
-  sd.process ~ dgamma(10, 1) # process error
-  sd.obs ~ dgamma(10, 1) # observation error
-  mu ~ dnorm(0, sd = 100) # global mean 
-  
-  if(species.effect){
-    sd.species ~ dgamma(10, 1)
-    for(spp in 1:n.species){
-      alpha.species[spp] ~ dnorm(0, sd = sd.species)  
-    }  
-  } else if(site.effect){
-    sd.site ~ dgamma(10, 1)
-    for(se in 1:n.sites){
-      alpha.site[se] ~ dnorm(0, sd = sd.site)
-    }
-  } else if(year.effect){
-    sd.year ~ dgamma(10, 1)
-    for(ye in 1:n.years){
-      alpha.year[ye] ~ dnorm(0, sd = sd.year)
-    }
-  }
-  
-  
-  # data model, density so using dnorm
-  for(p in 1:n.plots){
-    for(t in 1:n.weeks){
-      y[t, p] ~ dnorm(z[t, p], sd = sd.obs)
-    }
-  }
-  
-  # process model
-  for(p in 1:n.plots){
-    
-    # first state gets it's own prior
-    x[1, p] ~ dnorm(x.ic[p], sd = 10)
-    z[1, p] <- max(0, x[1, p])
-    
-    for(t in 2:n.weeks){
-      if(species.effect){
-        ex[t, p] <- mu + alpha.species[species[p]]
-      } else if(site.effect){
-        ex[t, p] <- mu + alpha.site[site[p]]
-      } else if(year.effect){
-        ex[t, p] <- mu + alpha.year[year[t]]
-      }
-      
-      x[t, p] ~ dnorm(ex[t, p], sd = sd.process)
-      z[t, p] <- max(0, x[t, p])
-    
-    } # time
-  } # plots
-})
-
-y <- wide.data[,-c(1,2)]
-data <- list(y = y)
-
+# number of each group
 n.species <- length(unique(species.vec))
 n.sites <- length(unique(site.vec))
 n.years <- length(unique(year.vec))
+years <- year(wide.data$time) %>% unique()
+
+# put data in an array by year
+y.table <- wide.data[,-c(1,2)]
+weeks.per.year <- year.vec %>% table()
+max.weeks <-  max(weeks.per.year)
+y <- array(NA, dim = c(3, # years
+                       max.weeks, # weeks
+                       ncol(y.table))) # site
+
+for(i in 1:3){
+  y.sub <- wide.data %>% 
+    filter(year(time) == years[i]) 
+  
+  y[i, 1:weeks.per.year[i], 1:ncol(y.table)] <- as.matrix(y.sub[,-c(1,2)]) 
+}
+
+data <- list(y = y)
 
 mu.inits <- y
-for(cc in 1:ncol(y)){
-  na.rows <- which(is.na(mu.inits[,cc]))
-  mu.inits[na.rows, cc] <- round(approx(pull(mu.inits, cc), xout = na.rows)$y)
+for(i in 1:3){
+  for(cc in 1:ncol(y.table)){
+    na.rows <- which(is.na(mu.inits[i,,cc]))
+    mu.inits[, na.rows, cc] <- approx(as.vector(mu.inits[i,,cc]), xout = na.rows)$y
+  }  
 }
+
 mu.inits[is.na(mu.inits)] <- 0
 
+total.mu.index <- dim(mu.inits)[1]*dim(mu.inits)[2]*dim(mu.inits)[3]
+
 inits <- function(){list(
-  mu = jitter(mean(as.matrix(mu.inits))),
-  y = apply(mu.inits, 2, jitter, pmax(0)),
-  z = apply(mu.inits, 2, jitter, pmax(0)),
-  x = apply(mu.inits, 2, jitter, pmax(0)),
-  ex = apply(mu.inits, 2, jitter, pmax(0)),
-  sd.process = runif(1, 4, 30), 
-  sd.obs = rgamma(1, 10, 1),
-  alpha.species = rnorm(n.species, 0, 1),
-  alpha.site = rnorm(n.sites, 0, 1),
-  alpha.year = rnorm(n.years, 0, 1),
-  sd.species = rgamma(1, 15, 1)
+  rho = rnorm(1, 0, 10),
+  y = mu.inits + runif(total.mu.index, 0, 5),
+  z = mu.inits + runif(total.mu.index, 0, 5),
+  x = mu.inits + runif(total.mu.index, 0, 5),
+  ex = mu.inits + runif(total.mu.index, 0, 5),
+  tau.process = runif(1, 0, 0.1), 
+  # tau.site = runif(1, 0, 0.1),
+  tau.obs = runif(2, 0, 0.1)
+  # alpha.species = rnorm(n.species, 0, 1),
+  # alpha.site = rnorm(n.sites, 0, 1),
+  # alpha.year = rnorm(n.years, 0, 1),
+  # tau.species = runif(1, 0, 0.1)
 )}
 
-monitor <- c("sd.process", "sd.obs", "mu", "z")
-if(species.effect) monitor <- c(monitor, "sd.species", "alpha.species")
-if(site.effect) monitor <- c(monitor, "sd.site", "alpha.site")
-if(year.effect) monitor <- c(monitor, "sd.year", "alpha.year")
+monitor <- c("tau.process", "tau.obs", "rho", "x")
+if(species.effect) monitor <- c(monitor, "tau.species", "alpha.species")
+if(site.effect) monitor <- c(monitor, "tau.site", "alpha.site")
+if(year.effect) monitor <- c(monitor, "tau.year", "alpha.year")
+
+x.ic <- matrix(runif(n.years*ncol(y), 0, 1), n.years, ncol(y))
 
 
 constants <- list(
-  n.weeks = nrow(y),
-  n.plots = ncol(y),
-  x.ic = runif(ncol(y), 0, 1),
+  n.weeks = weeks.per.year,
+  n.plots = ncol(y.table),
+  x.ic = x.ic, #runif(ncol(y), 0, 1),
   n.species = n.species,
   n.sites = n.sites,
   n.years = n.years,
@@ -199,6 +170,10 @@ if(site.effect) file.name <- paste0(file.name, "Site")
 if(year.effect) file.name <- paste0(file.name, "Year")
 rdata.name <- paste0(file.name, ".RData")
 
+save.path <- here("ModelOut",
+                  ForecastProject.id,
+                  rdata.name)
+
 source("Functions/run_nimble_parallel.R")
 cl <- makeCluster(n.cores)
 samples <- run_nimble_parallel(
@@ -208,20 +183,19 @@ samples <- run_nimble_parallel(
     data,
     inits,
     monitor,
-    n.iter = 25000,
+    n.iter = 50000,
     max.iter = 2e6,
+    thin = 10,
+    check.interval = 5,
     check.params.only = TRUE,
-    file.name = rdata.name
+    file.name = save.path
   )
 stopCluster(cl)  
 
 
 
 
-save(samples,
-     file = here("ModelOut", 
-                 ForecastProject.id, 
-                 rdata.name))
+save(samples, file = save.path)
 
 
 
