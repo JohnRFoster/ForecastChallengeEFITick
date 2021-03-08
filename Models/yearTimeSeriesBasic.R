@@ -14,30 +14,30 @@ model <- nimbleCode({
   }
   
   # data model, density so using dnorm
-  for(k in 1:n.years){
-    for(p in 1:n.plots){
+  for(p in 1:n.plots){
+    for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
-        y[k, t, p] ~ dnorm(z[year[t], t, p], tau = tau.obs[species[p]])
+        y[k, t, p] ~ dnorm(z[k, t, p], tau = tau.obs[species[p]])
       }
     }  
   }
   
   # process model
-  for(k in 1:n.years){
-    for(p in 1:n.plots){
-      
+  for(p in 1:n.plots){
+    for(k in 1:n.years){
+    
       # first latent state of each year gets it's own prior
-      x[k, 1, p] ~ dnorm(x.ic[k, p], tau = 10)
-      z[k, 1, p] <- max(0, x[1, 1, p])
+      x[k, 1, p] ~ dnorm(x.ic[k, p], tau = 1/10)
+      z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
-        ex[k, t, p] <- rho*x[year[t], t-1, p]
-        x[k, t, p] ~ dnorm(ex[year[t], t, p], tau = tau.process)
-        z[k, t, p] <- max(0, x[year[t], t, p])  
+        ex[k, t, p] <- rho*z[k, t-1, p]
+        x[k, t, p] ~ dnorm(ex[k, t, p], tau = tau.process)
+        z[k, t, p] <- max(0, x[k, t, p])  
         
       } # weeks
-    } # plots
-  } # years
+    } # years
+  } # plots
 })
 
 
