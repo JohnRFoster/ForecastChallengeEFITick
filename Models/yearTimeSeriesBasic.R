@@ -7,17 +7,20 @@ library(nimble)
 model <- nimbleCode({
   
   # priors
-  rho ~ dnorm(0, tau = 1/100)
+  phi ~ dbeta(10, 1) # survival
+  theta ~ dbeta(1, 10) # transition / death
+  life.constraint ~ dconstraint(phi + theta < 1) # probabilities must sum to one
+  tau.obs ~ dgamma(0.5, 1) # observation error
   tau.process ~ dgamma(0.5, 1) # process error
-  for(n.tau.obs in 1:n.species){
-    tau.obs[n.tau.obs] ~ dgamma(0.5, 1) # observation error  
-  }
+  # for(n.tau.obs in 1:n.sites){
+  #   tau.obs[n.tau.obs] ~ dgamma(0.5, 1) # observation error
+  # }
   
   # data model, density so using dnorm
   for(p in 1:n.plots){
     for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
-        y[k, t, p] ~ dnorm(z[k, t, p], tau = tau.obs[species[p]])
+        y[k, t, p] ~ dnorm(z[k, t, p], tau = tau.obs[site[p]])
       }
     }  
   }
@@ -31,7 +34,7 @@ model <- nimbleCode({
       z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
-        ex[k, t, p] <- rho*z[k, t-1, p]
+        ex[k, t, p] <- phi*z[k, t-1, p] - theta*z[k, t-1, p]
         x[k, t, p] ~ dnorm(ex[k, t, p], tau = tau.process)
         z[k, t, p] <- max(0, x[k, t, p])  
         
