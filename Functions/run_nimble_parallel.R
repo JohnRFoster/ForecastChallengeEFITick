@@ -46,6 +46,7 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
     mcmcConf <- configureMCMC(cModel.rw, 
                               monitors = monitor,
                               thin = thin)
+    # mcmcConf$addSampler(target = c("tau.obs[1]", "tau.obs[2]"), type = "RW_block")
     mcmcBuild <- buildMCMC(mcmcConf)
     compMCMC <- compileNimble(mcmcBuild)
     out.1 <- runMCMC(compMCMC, niter = n.iter, nburnin = n.burnin)
