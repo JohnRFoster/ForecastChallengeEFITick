@@ -43,6 +43,7 @@ vars <- c(
 )
 
 # start months to grab
+# 20190301 does not exist
 start.month <- c(
   "20190201", # feb 2019 - jan 2020
   "20190401",
