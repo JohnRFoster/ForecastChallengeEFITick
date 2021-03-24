@@ -24,15 +24,15 @@ year.effect <- FALSE
 # n.cores <- as.numeric(Sys.getenv("NSLOTS")) # number of cores to use for cluster 
 n.cores <- 3
 
-source("Models/yearTimeSeriesMetDiff.R")
+source("Models/yearTimeSeriesCGDD.R")
 group.dir <- "singleObsError"
 
 # for getting met variable
 csv <- "Data/BioTemperatureWeekly.csv"
-met.var <- "bioTempMaximum"
-met.uncertainty <- "bioTempMaximumVariance"
+met.var <- "cumGDD"
+met.uncertainty <- "cumGDDVariance"
 
-ForecastProject.id <- "SppSiteSurv"     # Some ID that applies to a set of forecasts
+ForecastProject.id <- "obsCGDD"     # Some ID that applies to a set of forecasts
 out.dir <- here("ModelOut", group.dir)
 if(!dir.exists(out.dir)) dir.create(out.dir)
 
@@ -137,7 +137,7 @@ for(i in 1:3){
 
 data <- list(
   y = y,
-  life.constraint = array(1, dim = dim(y)),
+  # life.constraint = array(1, dim = dim(y)),
   x.obs = met.vals,
   x.tau = 1 / x.var
 )
@@ -219,7 +219,7 @@ samples <- run_nimble_parallel(
     inits,
     monitor,
     n.iter = 30000,
-    max.iter = 5e6,
+    max.iter = 3e6,
     thin = 10,
     check.interval = 5,
     check.params.only = TRUE,
