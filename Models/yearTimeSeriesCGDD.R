@@ -8,10 +8,10 @@ model <- nimbleCode({
   
   # priors
   phi ~ dbeta(10, 1) # survival
-  theta ~ dbeta(1, 10) # transition / death
+  # theta ~ dbeta(1, 10) # transition / death
   alpha ~ dnorm(0, tau = 0.1) # intercept; observation model
   beta ~ dnorm(0, tau = 0.1) # slope; observation model
-  life.constraint ~ dconstraint(phi + theta < 1) # probabilities must sum to one
+  # life.constraint ~ dconstraint(phi + theta < 1) # probabilities must sum to one
   tau.obs ~ dgamma(0.5, 1) # observation error
   tau.process ~ dgamma(0.5, 1) # process error
 
@@ -21,7 +21,7 @@ model <- nimbleCode({
     for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
         logit(pi[k, t, p]) <- alpha + beta*cgdd[k, t, site[p]]
-        ex.z[k, t, p] <- pi*z[k, t, p]
+        ex.z[k, t, p] <- pi[k, t, p]*z[k, t, p]
         y[k, t, p] ~ dnorm(ex.z[k, t, p], tau = tau.obs)
       }
     }  
@@ -46,7 +46,7 @@ model <- nimbleCode({
       z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
-        ex[k, t, p] <- phi*z[k, t-1, p] - theta*z[k, t-1, p]
+        ex[k, t, p] <- phi*z[k, t-1, p] #- theta*z[k, t-1, p]
         x[k, t, p] ~ dnorm(ex[k, t, p], tau = tau.process)
         z[k, t, p] <- max(0, x[k, t, p])  
         
@@ -57,9 +57,8 @@ model <- nimbleCode({
 
 monitor <- c("tau.process", 
              "tau.obs", 
-             "theta",
+             # "theta",
              "phi",
-             "pi",
              "alpha",
              "beta", 
              # "cgdd",
@@ -67,8 +66,8 @@ monitor <- c("tau.process",
 
 inits <- function(){list(
   phi = runif(1, 0.95, 1),
-  theta = runif(1, 0, 0.001),
-  pi = runif(1, 0.4, 0.6),
+  # theta = runif(1, 0, 0.001),
+  # pi = array(runif(total.mu.index, 0.4, 0.6), dim = dim(y)),
   alpha = rnorm(1, 0, 0.01),
   beta = rnorm(1, 0, 0.01),
   y = mu.inits + runif(total.mu.index, 0, 5),
@@ -76,7 +75,7 @@ inits <- function(){list(
   x = mu.inits + runif(total.mu.index, 0, 5),
   ex = mu.inits + runif(total.mu.index, 0, 5),
   ex.z = mu.inits + runif(total.mu.index, 6, 8),
-  met.true = met.inits,
+  cgdd = met.inits,
   tau.process = runif(1, 0, 1/200^2), 
   tau.obs = rnorm(1, 150, 5)
 )}
