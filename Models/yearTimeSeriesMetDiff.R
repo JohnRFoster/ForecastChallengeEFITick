@@ -8,10 +8,10 @@ model <- nimbleCode({
   
   # priors
   tau.alpha.species ~ dgamma(0.5, 1)  # across species variability in survival
-  # tau.beta.species ~ dgamma(0.5, 1)  # across species variability in survival slope
+  tau.beta.species ~ dgamma(0.5, 1)  # across species variability in survival slope
   alpha ~ dnorm(0, tau = 0.01) # across site mean survival
   beta ~ dnorm(0, tau = 0.01) # across site mean survival
-  theta ~ dunif(0, 1) # across site mean removal 
+  # theta ~ dunif(0, 1) # across site mean removal 
   tau.process ~ dgamma(0.1, 50) # process error
   tau.obs ~ dgamma(0.5, 1) # observation error
   
@@ -27,7 +27,7 @@ model <- nimbleCode({
   # species effect priors
   for(spp in 1:n.species){
     alpha.species[spp] ~ dnorm(0, tau = tau.alpha.species) # random intercept by site
-    beta.species[spp] ~ dnorm(0, tau = 0.01)
+    beta.species[spp] ~ dnorm(beta, tau = tau.beta.species)
   }
   
   # driver data model
@@ -55,9 +55,9 @@ model <- nimbleCode({
           beta.species[species[p]]*(met.true[k, t, site[p]] - met.true[k, t-1, site[p]])
         
         # probabilities must sum to one
-        life.constraint[k, t, p] ~ dconstraint(phi[k, t, p] + theta <= 1)
+        # life.constraint[k, t, p] ~ dconstraint(phi[k, t, p] + theta <= 1)
         
-        ex[k, t, p] <- phi[k, t, p]*z[k, t-1, p] - theta*z[k, t-1, p]
+        ex[k, t, p] <- phi[k, t, p]*z[k, t-1, p] 
         x[k, t, p] ~ dnorm(ex[k, t, p], tau = tau.process)
         z[k, t, p] <- max(0, x[k, t, p])  
         
@@ -69,10 +69,9 @@ model <- nimbleCode({
 monitor <- c("tau.process", 
              "tau.obs", 
              "tau.alpha.species",
-             # "tau.beta.species",
-             "theta",
+             "tau.beta.species",
              "alpha",
-             # "beta", 
+             "beta",
              "alpha.species",
              "beta.species",
              # "met.true",
@@ -81,11 +80,11 @@ monitor <- c("tau.process",
 
 inits <- function(){list(
   phi = array(runif(total.mu.index, 0.99, 1), dim = dim(y)),
-  theta = runif(1, 0, 0.001),
+  # theta = runif(1, 0, 0.0001),
   alpha.species = rnorm(n.species, 0, 0.01),
   beta.species = rnorm(n.species, 0, 0.01),
   alpha = rnorm(1, 0, 0.01),
-  # beta = rnorm(1, 0, 0.01),
+  beta = rnorm(1, 0, 0.01),
   y = mu.inits + runif(total.mu.index, 0, 5),
   z = mu.inits + runif(total.mu.index, 0, 5),
   x = mu.inits + runif(total.mu.index, 0, 5),
@@ -93,7 +92,7 @@ inits <- function(){list(
   met.true = met.inits,
   tau.process = runif(1, 0, 1/200^2), 
   tau.alpha.species = runif(1, 0, 0.001),
-  # tau.beta.species = runif(1, 0, 0.001),
+  tau.beta.species = runif(1, 0, 0.001),
   tau.obs = rnorm(1, 150, 5)
 )}
 
