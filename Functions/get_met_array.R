@@ -2,15 +2,38 @@ library(tidyverse)
 
 get_met_array <- function(csv, weeks.per.year, year.weeks, met.var, met.uncertainty){
   
-  # csv <- "Data/RelativeHumidityWeekly.csv"
-  met <- read_csv(csv)
-  met <- met %>% 
-    filter(Year <= 2018 & Year >= 2016) %>% 
-    mutate(yearWeek = as.numeric(gsub("-", "", yearWeek)))
+  if("cumGDD" %in% met.var){
+    daily.bio.temp <- read_csv("Data/BioTemperatureDaily.csv")
+    met <- daily.bio.temp %>% 
+      group_by(siteID, Year) %>% 
+      mutate(growingDegree = if_else(bioTempMaximum > 0, bioTempMaximum, 0)) %>% 
+      mutate(cumGDD = cumsum(growingDegree)) %>% 
+      mutate(yearWeek = as.numeric(paste0(Year, epiWeek))) %>% 
+      rename(cumGDDVariance = bioTempMaximumVariance) %>% 
+      group_by(siteID, Year, epiWeek) %>% 
+      slice(which.max(cumGDD)) %>% 
+      filter(Year <= 2018 & Year >= 2016) %>%
+      select(c(Year,
+               yearWeek,
+               siteID,
+               cumGDDVariance,
+               cumGDD))
+    
+  } else {
+    met <- read_csv(csv)
+    met <- met %>% 
+      filter(Year <= 2018 & Year >= 2016) %>% 
+      mutate(yearWeek = as.numeric(gsub("-", "", yearWeek)))
+  }
+  
   
   n.sites <- unique(met$siteID) %>% length()
   sites <- unique(met$siteID)
   
+  year.col <- NA
+  for(i in seq_along(weeks.per.year)) year.col <- c(year.col, rep(i, weeks.per.year[i]))
+  year.col <- year.col[-1]
+    
   met.var.array <- array(NA, dim = c(3, max(weeks.per.year), length(sites)))
   met.unc.array <- array(NA, dim = c(3, max(weeks.per.year), length(sites)))
   
@@ -18,23 +41,33 @@ get_met_array <- function(csv, weeks.per.year, year.weeks, met.var, met.uncertai
     met.site <- met %>% 
       filter(siteID == sites[i]) %>% 
       filter(yearWeek %in% year.weeks$yearWeek) %>% 
-      select(c(yearWeek, 
+      select(c(yearWeek, Year,
                all_of(c(met.var, met.uncertainty))))
     
     met.join <- left_join(year.weeks, met.site)
     met.join.var <- met.join %>% select(all_of(met.var))
     met.join.unc <- met.join %>% select(all_of(met.uncertainty))
     
+    met.join.var <- cbind(met.join.var, year.col)
+    met.join.unc <- cbind(met.join.unc, year.col)
+    
     for(yy in seq_along(weeks.per.year)){
-      if(yy == 1){
-        year.index <- 1:weeks.per.year[1]  
-      } else {
-        year.index <- (weeks.per.year[yy-1]+1):(weeks.per.year[yy-1]+weeks.per.year[yy])  
-      }
-      met.center <- met.join.var[year.index, ] %>% pull()
+
+      met.center <- met.join.var %>% 
+        filter(year.col == yy) %>% 
+        pull(met.var)
       met.center <- met.center - mean(met.center, na.rm = TRUE)
       met.var.array[yy, 1:weeks.per.year[yy], i] <- met.center
-      met.unc.array[yy, 1:weeks.per.year[yy], i] <- as.matrix(met.join.unc[year.index, ])
+      
+      met.unc.pull <- met.join.unc %>% 
+        filter(year.col == yy) %>%  
+        pull(met.uncertainty) 
+      
+      if("cumGDD" %in% met.var){
+        met.unc.array[yy, 1:weeks.per.year[yy], i] <- cumsum(met.unc.pull)
+      } else {
+        met.unc.array[yy, 1:weeks.per.year[yy], i] <- met.unc.pull  
+      }
     }
   }
   
