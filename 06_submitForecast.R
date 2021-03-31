@@ -112,8 +112,6 @@ na.mat <- data.frame(yearWeek = target.weeks,
                      time = as.character(ISOweek2date(paste0("2019-W", start.week:end.week, "-1"))))
 
 wide.data <- bind_rows(wide.data, na.mat)
-wide.data.area <- left_join(select(wide.data, yearWeek), wide.data.area)
-wide.data.area$time <- wide.data$time # to fill in NAs
 
 # extract groupings (species, plots, sites)
 ids <- colnames(wide.data[-c(1, 2)])
