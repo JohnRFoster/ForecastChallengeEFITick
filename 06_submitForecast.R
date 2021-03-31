@@ -263,7 +263,7 @@ data.assimilation <- 0
 forecast <- 0
 date.col <- ISOweek2date(paste0("2019-W", target.index, "-1")) %>% as.character()
 
-n.ens <- 5000
+n.ens <- 2000
 draws <- sample.int(nrow(params), n.ens)
 
 check <- read.csv("Data/ticks-2019-03-04-tickGlobalNull_RandomWalk.csv.gz")
