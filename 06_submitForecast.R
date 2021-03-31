@@ -270,7 +270,7 @@ check <- read.csv("Data/ticks-2019-03-04-tickGlobalNull_RandomWalk.csv.gz")
 
 fx.df <- tibble()
 for(p in 1:28){
-  fx.ens <- t(pred[4,fx.index,p,])
+  fx.ens <- t(pred[4,fx.index,p,draws])
   colnames(fx.ens) <- date.col
   
   fx.plot <- plot.vec[p]
