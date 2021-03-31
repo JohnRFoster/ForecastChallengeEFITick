@@ -9,7 +9,7 @@ library(lubridate)
 #' @param dec.lon decimal longitude from NEON data 
 #' @return matrix for the given nmme variable
 
-make_nmme_ens <- function(var, start.month, dec.lat, dec.lon){
+make_nmme_ens <- function(var, start.month, dec.lat, dec.lon, gdd = FALSE){
   
   # convert to get correct ncdf index
   dec.lon <- dec.lon %% 360 
@@ -29,9 +29,14 @@ make_nmme_ens <- function(var, start.month, dec.lat, dec.lon){
     name <- names(nc$var) # variable name
     nmme <- ncvar_get(nc, name)
     
-    # daily forecast; everyday from begining of start month
-    nmme.ens[,e] <- nmme[dec.lon, dec.lat, ]
-    
+    # daily forecast; everyday from beginning of start month
+    if(var == "tasmin" | var == "tasmax"){
+      value <- nmme[dec.lon, dec.lat, ] - 273.15
+      if(gdd) value <- if_else(value > 0, value, 0)
+      nmme.ens[,e] <- value
+    } else {
+      nmme.ens[,e] <- nmme[dec.lon, dec.lat, ]
+    }
   }
   
   nmme.days <- ymd(start.month) + nc$dim$TIME$vals # every day in nmme forecast
