@@ -263,14 +263,14 @@ data.assimilation <- 0
 forecast <- 0
 date.col <- ISOweek2date(paste0("2019-W", target.index, "-1")) %>% as.character()
 
-n.ens <- 2000
+n.ens <- 5000
 draws <- sample.int(nrow(params), n.ens)
 
 check <- read.csv("Data/ticks-2019-03-04-tickGlobalNull_RandomWalk.csv.gz")
 
 fx.df <- tibble()
 for(p in 1:28){
-  fx.ens <- t(pred[4,fx.index,p,draws])
+  fx.ens <- t(pred[4,fx.index,p,])
   colnames(fx.ens) <- date.col
   
   fx.plot <- plot.vec[p]
@@ -289,14 +289,14 @@ for(p in 1:28){
            forecast = forecast,
            obs_flag = obs.error) %>% 
     pivot_longer(cols = all_of(fx.species), 
-                 names_to = "species") #%>%  ## make species a column
-    # group_by(time, plotID, siteID, obs_flag, species, forecast, data_assimilation) %>%
-    # summarize(mean = mean(value),
-    #           sd   = sd(value),
-    #           Pred_interv_02.5 = quantile(value, 0.025),
-    #           Pred_interv_97.5 = quantile(value, 0.975)) %>% 
-    # pivot_longer(cols = c(mean, sd, Conf_interv_02.5, Conf_interv_97.5), 
-    #              names_to = "statistic")
+                 names_to = "species") %>%  ## make species a column
+    group_by(time, plotID, siteID, obs_flag, species, forecast, data_assimilation) %>%
+    summarize(mean = mean(value),
+              sd   = sd(value),
+              Pred_interv_02.5 = quantile(value, 0.025),
+              Pred_interv_97.5 = quantile(value, 0.975)) %>%
+    pivot_longer(cols = c(mean, sd, Pred_interv_02.5, Pred_interv_97.5),
+                 names_to = "statistic")
   
     fx.df <- bind_rows(fx.df, fx)
 }
@@ -308,6 +308,18 @@ fx.submit <- fx.df %>%
 file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv")
 file.dest <- file.path("ForecastSubmissionFiles", file.name)
 write_csv(fx.submit, file.dest)
+
+if(efi_server){
+  library(aws.s3) 
+  
+  Sys.setenv("AWS_DEFAULT_REGION" = "data",
+             "AWS_S3_ENDPOINT" = "ecoforecast.org")
+  
+  aws.s3::put_object(file = file.dest,
+                     object = file.name, 
+                     bucket = "submissions")  
+}
+
 
 #### metadata ####
 
@@ -442,15 +454,5 @@ eml_validate(my_eml)
 ## check that the EML is also a valid EFI forecast
 EFIstandards::forecast_validator(my_eml)
 
-if(efi_server){
-  library(aws.s3) 
-  
-  Sys.setenv("AWS_DEFAULT_REGION" = "data",
-             "AWS_S3_ENDPOINT" = "ecoforecast.org")
-  
-  aws.s3::put_object(file = file.dest,
-                     object = file.name, 
-                     bucket = "submissions")  
-}
 
 
