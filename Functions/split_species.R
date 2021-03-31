@@ -38,7 +38,8 @@ split_species <- function(spp){
   )
   
   # first load the target data set
-  data <- read.csv("Data/ticks-targets.csv.gz")
+  # data <- read.csv("Data/ticks-targets.csv.gz")
+  data <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz")
   data <- data %>% 
     select(-all_of(c("RHMin_precent",
                      "RHMin_variance",
@@ -52,20 +53,20 @@ split_species <- function(spp){
   if(spp == "Ixodes"){
     data.return <- data %>% 
       filter(plotID %in% ixodes.plots) %>% 
-      select(-Ambloyomma_americanum) %>% 
+      select(-amblyomma_americanum) %>% 
       group_by(plotID) %>%
-      distinct(yearWeek, Ixodes_scapularis, .keep_all = TRUE) %>% 
+      distinct(yearWeek, ixodes_scapularis, .keep_all = TRUE) %>% 
       mutate(indicator = !yearWeek %in% yearWeek[duplicated(yearWeek)]) %>% 
-      filter(Ixodes_scapularis >= 0 | indicator) %>% 
+      filter(ixodes_scapularis >= 0 | indicator) %>% 
       select(-indicator)
   } else if(spp == "Amblyomma"){
     data.return <- data %>% 
       filter(plotID %in% ambloyomma.plots) %>% 
-      select(-Ixodes_scapularis) %>% 
+      select(-ixodes_scapularis) %>% 
       group_by(plotID) %>%
-      distinct(yearWeek, Ambloyomma_americanum, .keep_all = TRUE) %>% 
+      distinct(yearWeek, amblyomma_americanum, .keep_all = TRUE) %>% 
       mutate(indicator = !yearWeek %in% yearWeek[duplicated(yearWeek)]) %>% 
-      filter(Ambloyomma_americanum >= 0 | indicator) %>% 
+      filter(amblyomma_americanum >= 0 | indicator) %>% 
       select(-indicator)
   }
   
