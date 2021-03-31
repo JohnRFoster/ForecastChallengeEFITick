@@ -256,6 +256,8 @@ fx.start <- which(target.index == start.week)
 fx.index <- fx.start:last(pred.2019)
 species.fx <- c(rep("ixodes_scapularis", length(plots.ixodes)), 
                  rep("amblyomma_americanum", length(plots.amblyomma)))
+
+
 obs.error <- 2
 data.assimilation <- 0
 forecast <- 0
@@ -326,6 +328,119 @@ attrList <- set_attributes(attributes,
                            col_classes = c("Date", "numeric", "numeric","numeric", 
                                            "numeric","numeric", "numeric"))
 
+## sets metadata about the file itself (name, file type, size, MD5, etc)
+physical <- set_physical(file.dest,
+                         recordDelimiter='\n')
+## set metadata for the file as a whole
+dataTable <- eml$dataTable(
+  entityName = "forecast",  ## this is a standard name to allow us to distinguish this entity from 
+  entityDescription = "Forecast of population size using a basic demographic model",
+  physical = physical,
+  attributeList = attrList)
+
+me <- list(individualName = list(givenName = "John", 
+                                 surName = "Foster"),
+           electronicMailAddress = "fosterj@bu.edu")
+
+taxa <- tibble::tribble(
+  ~Genus,      ~Species,
+  "Ixodes",    "scapularis",
+  "Amblyomma", "americanum")
+
+coverage <- 
+  set_coverage(begin = first(date.col), 
+               end = last(date.col),
+               sci_names = taxa,
+               geographicDescription = "NEON sites BLAN, ORNL, SCBI, SERC, KONZ, TALL, UKFS")
+
+keywordSet <- list(
+  list(
+    keywordThesaurus = "EFI controlled vocabulary",
+    keyword = list("forecast",
+                   "population",
+                   "timeseries",
+                   "ticks")
+  ))
+
+abstract <- "Demography state-spave model. Process error is Gaussian and observation 
+error is Poisson. Cumalative growing degree days are used it estimate a observation
+probability for each week for each site. Survival is constant. Driver data is from 
+NEONs IR temperature (ground temp) and NOAAs NMME max temp."
+
+dataset = eml$dataset(
+  title = "State-space survival and capture probability model",
+  creator = me,
+  contact = list(email="fosterj@bu.edu"),
+  pubDate = forecast_issue_time,
+  intellectualRights = "http://www.lternet.edu/data/netpolicy.html.",
+  abstract = abstract,
+  dataTable = dataTable,
+  keywordSet = keywordSet,
+  coverage = coverage
+)
+
+additionalMetadata <- eml$additionalMetadata(
+  metadata = list(
+    forecast = list(
+      ## Basic elements
+      timestep = "1 week", ## should be udunits parsable; already in coverage -> temporalCoverage?
+      forecast_horizon = paste0(length(target.weeks), " weeks"),
+      forecast_issue_time = forecast_issue_time,
+      forecast_iteration_id = forecast_iteration_id,
+      forecast_project_id = forecast_project_id,
+      metadata_standard_version = "0.3",
+      model_description = list(
+        forecast_model_id = forecast_model_id,
+        name = "discrete State-space survival and capture probability model",
+        type = "process-based",
+        repository = "https://github.com/JohnRFoster/ForecastChallengeEFITick.git"
+      ),
+      ## MODEL STRUCTURE & UNCERTAINTY CLASSES
+      initial_conditions = list(
+        # Possible values: absent, present, data_driven, propagates, assimilates
+        status = "propagates",
+        # Number of parameters / dimensionality
+        complexity = 2  ## [species 1, species 2] per depth
+      ),
+      drivers = list(
+        status = "propagates"
+      ),
+      parameters = list(
+        status = "present"
+      ),
+      random_effects = list(
+        status = "absent"
+      ),
+      process_error = list(
+        status = "propagates",
+        propagation = list(
+          type = "ensemble", # ensemble vs analytic
+          size = n.ens          # required if ensemble
+        ),
+        complexity = 2,   
+        covariance = FALSE
+      ),
+      obs_error = list(
+        status = "present",
+        complexity = 2,   
+        covariance = FALSE
+      )
+    ) # forecast
+  ) # metadata
+) # eml$additionalMetadata
+
+my_eml <- eml$eml(dataset = dataset,
+                  additionalMetadata = additionalMetadata,
+                  packageId = forecast_iteration_id , 
+                  system = "datetime"  ## system used to generate packageId
+)
+
+write_eml(my_eml, "forecast-eml.xml")
+
+## check base EML
+eml_validate(my_eml)
+## check that the EML is also a valid EFI forecast
+EFIstandards::forecast_validator(my_eml)
 
 if(efi_server){
   library(aws.s3) 
