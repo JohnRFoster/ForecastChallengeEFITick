@@ -15,22 +15,22 @@ driver.products <- c(
   "DP1.00041.001"  # soil temperature
 )
 
-make.rh <- FALSE
-make.taat <- FALSE
-make.ir.temp <- FALSE
-make.soil.temp <- FALSE
+make.rh <- TRUE
+make.taat <- TRUE
+make.ir.temp <- TRUE
+make.soil.temp <- TRUE
 make.soil.water <- TRUE
 
 # target sites
 target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
 message("Updating NEON Data...")
-for(i in seq_along(driver.products)){
-  neon_download(product = driver.products[i],
-                end_date = "2019-12-31",   
-                site = target.sites,       
-                .token = Sys.getenv("NEON_TOKEN"))  
-}
+# for(i in seq_along(driver.products)){
+#   neon_download(product = driver.products[i],
+#                 end_date = "2019-12-31",   
+#                 site = target.sites,       
+#                 .token = Sys.getenv("NEON_TOKEN"))  
+# }
 
 # set up end date
 day.run <- lubridate::today() # the day the script is called
@@ -39,12 +39,14 @@ day.run <- lubridate::today() # the day the script is called
 date.end.month <- seq(as.Date("2019-01-01"), length = 12, by = "months") - 1 
 
 # anytime we run this script before the start of the challenge we want to exclude all of 2019
-if(day.run < ymd("2021-03-31")){
-  end.date <- "2018-12-31"
-} else { 
-  month.run <- month(day.run)
-  end.date <- date.end.month[month(day.run)]
-}
+# if(day.run < ymd("2021-03-31")){
+#   end.date <- "2018-12-31"
+# } else { 
+#   month.run <- month(day.run)
+#   end.date <- date.end.month[month(day.run)]
+# }
+
+end.date <- "2019-12-31"
 
 make_dataset <- function(table, end.date, QF.col, min.col, max.col, var.col, exp.unc.col, 
                          new.min.var, new.min.exp.unc, new.max.var, new.max.exp.unc, QF.flag = 0){
