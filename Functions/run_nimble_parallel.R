@@ -65,6 +65,7 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
   g.diag <- gelman.diag(check.mcmc, multivariate = FALSE)$psrf
   convergence <- max(g.diag[,"Upper C.I."]) < psrf.max
   message(paste("Convergence:", convergence)) 
+  if(is.na(convergence)) print(g.diag)
   
   counter <- 1
   total.iter <- counter * n.iter
