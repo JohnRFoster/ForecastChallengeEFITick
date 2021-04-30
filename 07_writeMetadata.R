@@ -5,7 +5,7 @@ library(tidyverse)
 library(lubridate)
 
 fx.dir <- "ForecastSubmissionFiles"
-fx.file <- "ticks-2019-03-04-BU_Dem"
+fx.file <- "ticks-2019-03-31-BU_Dem"
 file.dest <- file.path(fx.dir, paste0(fx.file, ".csv"))
 fx <- read.csv(file.dest)
 time <- fx %>% 
@@ -22,10 +22,14 @@ lat.lon <- ticks %>%
          decimalLongitude = decimalLongitude) %>% 
   distinct()
 
-n.ens <- 2000
+n.ens <- fx %>% 
+  pull(ensemble) %>% 
+  unique() %>% 
+  length() %>% 
+  as.numeric()
 
 forecast_project_id <- "BU_Dem"
-forecast_model_id <- "79feb004ce3aec1c825227a470a3f8bd456f0a67"
+forecast_model_id <- "98e974b4e62c4b03fd5395f3780687cffa95b4da"
 forecast_iteration_id <- time[1]
 forecast_issue_time <- lubridate::today()
 
@@ -86,9 +90,10 @@ keywordSet <- list(
   ))
 
 abstract <- "Demography state-spave model. Process error is Gaussian and observation 
-error is Poisson. Cumalative growing degree days are used it estimate a observation 
-probability for each week for each site. Survival is constant. Driver data is from  
-NEONs IR temperature (ground temp) and NOAAs NMME max temp."
+error is Poisson. Cumalative growing degree days are used it estimate an observation 
+probability for each week for each site. Survival is estimated for each week at each
+site using weekly max ground temp. Driver data is from NEONs IR temperature 
+(ground temp) and NOAAs NMME max temp."
 
 dataset = eml$dataset(
   title = "State-space survival and capture probability model",
@@ -124,14 +129,15 @@ additionalMetadata <- eml$additionalMetadata(
         # Possible values: absent, present, data_driven, propagates, assimilates
         status = "propagates",
         # Number of parameters / dimensionality
-        complexity = 2  ## [species 1, species 2] per plot
+        complexity = 28  ## species x plot
       ),
       drivers = list(
-        status = "propagates"
+        status = "propagates",
+        complesity = 3
       ),
       parameters = list(
         status = "present",
-        complexity = 3 # survival, capture prob (beta + beta.site) per site
+        complexity = 16 # intercept + slope[site] for survival and obs prob
       ),
       random_effects = list(
         status = "absent"
@@ -142,12 +148,12 @@ additionalMetadata <- eml$additionalMetadata(
           type = "ensemble", # ensemble vs analytic
           size = n.ens          # required if ensemble
         ),
-        complexity = 2,   
+        complexity = 1,   
         covariance = FALSE
       ),
       obs_error = list(
         status = "present",
-        complexity = 2,   
+        complexity = 1,   
         covariance = FALSE
       )
     ) # forecast
