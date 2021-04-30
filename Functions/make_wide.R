@@ -14,7 +14,10 @@ make_wide <- function(data.ixodes = NULL, data.amblyomma = NULL){
       pivot_wider(id_cols = c(yearWeek, time), 
                   names_from = plotID, 
                   values_from = ixodes_scapularis,
-                  names_glue = "Ixodes_{plotID}") 
+                  names_glue = "Ixodes_{plotID}") %>% 
+      arrange(yearWeek) %>% 
+      mutate(yearWeek = as.character(yearWeek),
+             time = as.character(time))  
     
     if(is.null(data.amblyomma)) return(wide.ixodes)
   } 
@@ -31,7 +34,10 @@ make_wide <- function(data.ixodes = NULL, data.amblyomma = NULL){
                   names_from = plotID, 
                   values_fn = {max},
                   values_from = amblyomma_americanum,
-                  names_glue = "Amblyomma_{plotID}")
+                  names_glue = "Amblyomma_{plotID}") %>% 
+      arrange(yearWeek) %>% 
+      mutate(yearWeek = as.character(yearWeek),
+             time = as.character(time))  
     
     if(is.null(data.ixodes)) return(wide.amblyomma)
   }
