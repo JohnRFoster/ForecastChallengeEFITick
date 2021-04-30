@@ -14,7 +14,7 @@ library(lubridate) # for finding year from dates
 library(stringr) # for searching within character strings 
 library(here) # for working within subdirectories
 library(parallel) # for running models in parallel
-library(ISOweek) # to convert year-weeks to date
+library(MMWRweek) # to convert year-weeks to date
 
 efi_server <- TRUE
 
@@ -29,6 +29,7 @@ if(day.run < "2021-03-31"){
 } else { # otherwise use the appropriate starting week (months are 2 ahead)
   start.week <- start.epi.weeks[month(day.run) - 2]
   end.met.obs <- met.weeks[month(day.run) - 2]
+  nmme.start <- month(day.run) + 1
 }
 filter.week <- paste0("2019", start.week) %>% as.integer()
 filter.week.met <- paste0("2019", end.met.obs)
@@ -59,57 +60,15 @@ source("Functions/split_species.R")
 data.ixodes <- split_species("Ixodes")
 data.ambloyoma <- split_species("Amblyomma")
 
-# get lat.lon
-ticks <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz")
-lat.lon <- ticks %>% 
-  select(c(siteID, decimalLatitude, decimalLongitude)) %>% 
-  mutate(decimalLatitude = round(decimalLatitude), # nmme has one deg resolution 
-         decimalLongitude = round(decimalLongitude)) %>% 
-  distinct()
-
-# get unique sites
-sites.ixodes <- unique(data.ixodes$siteID)
-sites.amblyomma <- unique(data.ambloyoma$siteID)
-
-# get unique plots
-plots.ixodes <- unique(data.ixodes$plotID)
-plots.amblyomma <- unique(data.ambloyoma$plotID)
-
-wide.ixodes <- data.ixodes %>% 
-  filter(plotID %in% plots.ixodes) %>% 
-  filter(Year >= 2016) %>%
-  filter(yearWeek < filter.week) %>% 
-  # mutate(density = Ixodes_scapularis / totalSampledArea * 1600) %>%
-  pivot_wider(id_cols = c(yearWeek, time), 
-              names_from = plotID, 
-              values_from = ixodes_scapularis,
-              names_glue = "Ixodes_{plotID}") 
-
-wide.amblyomma <- data.ambloyoma %>% 
-  filter(plotID %in% plots.amblyomma) %>% 
-  filter(Year >= 2016) %>%
-  filter(yearWeek < filter.week) %>% 
-  # mutate(density = amblyomma_americanum / totalSampledArea * 1600) %>% 
-  pivot_wider(id_cols = c(yearWeek, time), 
-              names_from = plotID, 
-              values_fn = {max},
-              values_from = amblyomma_americanum,
-              names_glue = "Amblyomma_{plotID}")
-
-
-wide.data <- full_join(wide.ixodes, wide.amblyomma,
-                       by = c("yearWeek", "time")) %>% 
-  arrange(yearWeek) %>% 
-  mutate(yearWeek = as.character(yearWeek),
-         time = as.character(time))
-
-
+source("Functions/make_wide.R")
+wide.data <- make_wide(data.ixodes, data.ambloyoma)
 
 ### set forecast variables ###
 end.week <- 44 # does not change
 target.weeks <- paste0("2019", start.week:end.week)
 na.mat <- data.frame(yearWeek = target.weeks,
-                     time = as.character(ISOweek2date(paste0("2019-W", start.week:end.week, "-1"))))
+                     time = as.character(MMWRweek2Date(rep(2019, length(start.week:end.week)),
+                                                       start.week:end.week)))
 
 wide.data <- bind_rows(wide.data, na.mat)
 
@@ -152,9 +111,10 @@ met.vals <- met.list$met.vals
 x.var <- met.list$met.uncertainty
 
 source("Functions/make_nmme_ens.R")
+start.month <- paste0("20190", nmme.start, "01")
 for(s in 1:n.sites){
   met.fx <- make_nmme_ens(var = "tasmax", 
-                          start.month = "20190401",
+                          start.month = start.month,
                           dec.lat = lat.lon$decimalLatitude[s], 
                           dec.lon = lat.lon$decimalLongitude[s],
                           gdd = TRUE) %>% as_tibble() %>% 
@@ -214,18 +174,24 @@ data <- list(
 
 
 
-load("ModelOut/poisDataArea/BetaSiteCGDDLogit.RData")
+load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncated_2019-14.RData")
 
+out.mcmc <- save.ls$samples
+out.mcmc <- as.matrix(out.mcmc)
+# out.mcmc <- as.matrix(samples$samples)
 
-out.mcmc <- as.matrix(samples$samples)
+n.ens <- 2000
+draws <- sample.int(nrow(out.mcmc), n.ens)
+
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
-params <- out.mcmc[,-x.cols] 
-z <- apply(out.mcmc[,x.cols], 2, pmax, 0)
+params <- out.mcmc[draws, -x.cols] 
+z <- out.mcmc[draws, x.cols]
+# z <- apply(out.mcmc[,x.cols], 2, pmax, 0)
 
 pred <- pi <- array(NA, dim = c(n.years, 
                                 max(weeks.per.year), 
                                 ncol(y.table), 
-                                nrow(params)))
+                                n.ens))
 for(p in 1:ncol(y.table)){
   print(p)
   for(k in 1:n.years){
@@ -242,7 +208,8 @@ for(p in 1:ncol(y.table)){
       z.latent <- z[,z.col]
       
       cgdd <- rnorm(nrow(params), cgdd.p.k[t], cgdd.sd[t])
-      pi.x <- params[, "beta"] + params[,"beta.site[1]"] * cgdd
+      site.col <- paste0("beta.site[", site.index[p], "]")
+      pi.x <- params[, "beta"] + params[,site.col] * cgdd
       pi[k, t, p, ] <- boot::inv.logit(pi.x)
       lambda <- pi[k, t, p, ]*z.latent
       pred[k, t, p, ] <- rpois(nrow(params), lambda)
@@ -252,8 +219,7 @@ for(p in 1:ncol(y.table)){
 
 pred.2019 <- 1:weeks.per.year[4]
 target.index <- start.week:end.week
-fx.start <- which(target.index == start.week)
-fx.index <- fx.start:last(pred.2019)
+fx.index <- target.index-10
 species.fx <- c(rep("ixodes_scapularis", length(plots.ixodes)), 
                  rep("amblyomma_americanum", length(plots.amblyomma)))
 
@@ -261,16 +227,16 @@ species.fx <- c(rep("ixodes_scapularis", length(plots.ixodes)),
 obs.error <- 2
 data.assimilation <- 0
 forecast <- 0
-date.col <- ISOweek2date(paste0("2019-W", target.index, "-1")) %>% as.character()
+date.col <- as.character(MMWRweek2Date(rep(2019, length(target.index)),
+                                       target.index))
 
-n.ens <- 2000
-draws <- sample.int(nrow(params), n.ens)
 
-check <- read.csv("Data/ticks-2019-03-04-tickGlobalNull_RandomWalk.csv.gz")
+
+# check <- read.csv("Data/ticks-2019-03-04-tickGlobalNull_RandomWalk.csv.gz")
 
 fx.df <- tibble()
 for(p in 1:28){
-  fx.ens <- t(pred[4,fx.index,p,draws])
+  fx.ens <- t(pred[4,fx.index,p,])
   colnames(fx.ens) <- date.col
   
   fx.plot <- plot.vec[p]
@@ -302,8 +268,11 @@ for(p in 1:28){
 }
 
 fx.submit <- fx.df %>% 
-  pivot_wider(names_from = species, 
-              values_from = value) ## go back to species wide
+  pivot_wider(names_from = species, ## go back to species wide
+              values_from = value) 
+
+fx.submit$ixodes_scapularis[is.na(fx.submit$ixodes_scapularis)] <- 0
+fx.submit$amblyomma_americanum[is.na(fx.submit$amblyomma_americanum)] <- 0
 
 file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv")
 file.dest <- file.path("ForecastSubmissionFiles", file.name)
