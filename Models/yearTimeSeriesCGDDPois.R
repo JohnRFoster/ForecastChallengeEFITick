@@ -7,12 +7,14 @@ library(nimble)
 model <- nimbleCode({
   
   # priors
-  phi ~ dbeta(10, 1) # survival
-  # theta ~ dbeta(1, 10) # transition / death
-  beta ~ dnorm(0, tau = 0.1) # intercept; observation model
-  tau.beta.site ~ dgamma(0.5, 1)  # across site variability in detection
-  # alpha ~ dnorm(0, tau = 0.01) 
-  tau.process ~ dgamma(0.5, 1) # process error
+  # phi ~ dbeta(10, 1) # survival
+  theta ~ dbeta(1, 10) # transition / death
+  
+  beta ~ dnorm(beta.mu, tau = beta.tau) # intercept; observation model
+  psi ~ dnorm(0, tau = 0.1) # intercept; survival
+  tau.beta.site ~ dgamma(shape = tau.beta.site.shape, rate = tau.beta.site.rate)  # across site variability in detection
+  tau.psi.site ~ dgamma(0.5, 1)  # across site variability in survival
+  tau.process ~ dgamma(shape = tau.process.shape, rate = tau.process.rate) # process error
 
   
   # data model, density so using dnorm
@@ -20,8 +22,10 @@ model <- nimbleCode({
     for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
         
+        logit(phi[k, t, p]) <- psi + psi.site[site[p]] * x.phi[k, t, site[p]]
+        
         logit(pi[k, t, p]) <- beta + beta.site[site[p]] * cgdd[k, t, site[p]]
-        ex.z[k, t, p] <- z[k, t, p] * pi[k, t, p]
+        ex.z[k, t, p] <- x[k, t, p] * pi[k, t, p]
         
         y[k, t, p] ~ dpois(ex.z[k, t, p])
       }
@@ -36,11 +40,15 @@ model <- nimbleCode({
   
   # driver data model
   for(s in 1:n.sites){
-  beta.site[s] ~ dnorm(0, tau = tau.beta.site)
+    beta.site[s] ~ dnorm(mean = beta.site.mu[s], tau = tau.beta.site)
+    psi.site[s] ~ dnorm(0, tau = tau.psi.site)
     for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
         cgdd[k, t, s] ~ dunif(0, 6) # driver prior
         x.obs[k, t, s] ~ dnorm(cgdd[k, t, s], tau = x.tau[k, t, s])
+        
+        x.phi[k, t, s] ~ dunif(-4, 8)
+        x.obs.phi[k, t, s] ~ dnorm(x.phi[k, t, s], tau = x.phi.tau[k, t, s])
       }
     }
   }
@@ -50,13 +58,13 @@ model <- nimbleCode({
     for(k in 1:n.years){
       
       # first latent state of each year gets it's own prior
-      x[k, 1, p] ~ dnorm(x.ic[k, p], tau = 1/10)
-      z[k, 1, p] <- max(0, x[k, 1, p])
+      # x[k, 1, p] ~ T(dnorm(x.ic[k, p], tau = 1/10), 0, Inf)
+      # z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
-        ex[k, t, p] <- phi*z[k, t-1, p] #- theta*z[k, t-1, p]
-        x[k, t, p] ~ dnorm(ex[k, t, p], tau = tau.process)
-        z[k, t, p] <- max(0, x[k, t, p])  
+        ex[k, t, p] <- x[k, t-1, p] + phi[k, t, site[p]]*x[k, t-1, p] - theta*x[k, t-1, p]
+        x[k, t, p] ~ T(dnorm(ex[k, t, p], tau = tau.process), 0, Inf)
+        # z[k, t, p] <- max(0, x[k, t, p])  
         
       } # weeks
     } # years
@@ -64,34 +72,31 @@ model <- nimbleCode({
 })
 
 monitor <- c("tau.process", 
-             # "tau.beta.species",
+             "tau.psi.site",
              "tau.beta.site",
-             # "theta",
-             "phi",
-             # "alpha",
-             # "alpha.species",
+             "psi",
+             "psi.site",
              "beta",
              "beta.site",
-             # "cgdd",
+             "theta",
              "x")
 
 inits <- function(){list(
-  phi = runif(1, 0.95, 1),
-  # theta = runif(1, 0, 0.001),
+  # phi = array(runif(total.mu.index, 0.95, 1), dim = dim(y)),
   # pi = array(runif(total.mu.index, 0.4, 0.6), dim = dim(y)),
-  # alpha = rnorm(1, 0, 0.01),
-  # alpha.species = rnorm(n.species, 0, 0.01),
-  alpha = runif(1, 1, 2),
+  theta <- runif(1, 0, 0.1),
   beta = runif(1, 1, 2),
-  # beta.species = runif(n.species, 0.9, 1.1),
+  psi = runif(1, 1, 2),
   beta.site = runif(n.sites, 0.9, 1.1),
+  psi.site = runif(n.sites, 0.9, 1.1),
   y = round(mu.inits),
   z = round(mu.inits),# + runif(total.mu.index, 0, 5),
   x = round(mu.inits),# + runif(total.mu.index, 0, 5),
   ex = round(mu.inits),# + runif(total.mu.index, 0, 5),
   ex.z = round(mu.inits),# + runif(total.mu.index, 6, 8),
-  # cgdd = met.inits,
-  tau.beta.site = runif(1, 0, 0.001),
+  cgdd = met.inits,
+  tau.beta.site = runif(1, 0.3, 0.4),
+  tau.psi.site = runif(1, 0, 0.001),
   tau.process = runif(1, 0, 1/2000^2) 
 )}
 
