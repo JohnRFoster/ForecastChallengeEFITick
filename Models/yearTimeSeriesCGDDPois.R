@@ -2,6 +2,8 @@
 # treating years as seperate time series 
 # observation probability driven by cumulative gdd
 # survival rate driven by temperature
+# observation error: dpois
+# process error: dnorm
 
 library(nimble)
 
