@@ -29,7 +29,7 @@ n.ens <- fx %>%
   as.numeric()
 
 forecast_project_id <- "BU_Dem"
-forecast_model_id <- "98e974b4e62c4b03fd5395f3780687cffa95b4da"
+forecast_model_id <- "98e974b4e62c4b03fd5395f3780687cffa95b4da" # commit for model runs
 forecast_iteration_id <- time[1]
 forecast_issue_time <- lubridate::today()
 
