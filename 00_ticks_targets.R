@@ -50,10 +50,10 @@ efi_server <- TRUE
 
 target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
-#neon_download(product = "DP1.10093.001", # tick data product
-#              end_date = "2019-12-31",   # end date for all data
-#              site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
-#              type = "basic")            # tick data sets do not have "expanded" data
+neon_download(product = "DP1.10093.001", # tick data product
+             end_date = "2019-12-31",   # end date for all data
+             site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
+             type = "basic")            # tick data sets do not have "expanded" data
 
 
 
