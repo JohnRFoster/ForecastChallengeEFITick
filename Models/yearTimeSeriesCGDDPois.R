@@ -1,5 +1,7 @@
 ## basic code for fitting all data at once
 # treating years as seperate time series 
+# observation probability driven by cumulative gdd
+# survival rate driven by temperature
 
 library(nimble)
 
