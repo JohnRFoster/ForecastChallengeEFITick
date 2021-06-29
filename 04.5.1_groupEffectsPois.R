@@ -19,6 +19,7 @@ library(MMWRweek) # to convert year-weeks to date
 start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
 met.weeks <- start.epi.weeks[2:length(start.epi.weeks)] - 1
 day.run <- lubridate::today() # the day the script is called
+day.run <- "2021-05-25"
 
 # anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
 if(day.run < "2021-03-31"){ 
@@ -58,6 +59,13 @@ source("Functions/split_species.R")
 data.ixodes <- split_species("Ixodes")
 data.ambloyoma <- split_species("Amblyomma")
 
+plots.ixodes <- data.ixodes %>% 
+  pull(plotID) %>% 
+  unique()
+plots.amblyomma <- data.ambloyoma %>% 
+  pull(plotID) %>% 
+  unique()
+
 source("Functions/make_wide.R")
 wide.data <- make_wide(data.ixodes, data.ambloyoma)
 
@@ -69,6 +77,14 @@ na.mat <- data.frame(yearWeek = target.weeks,
                                                        start.week:end.week)))
 
 wide.data <- bind_rows(wide.data, na.mat)
+
+# get lat.lon
+ticks <- read_csv("Data/ticks-targets.csv.gz")
+lat.lon <- ticks %>% 
+  select(c(siteID, decimalLatitude, decimalLongitude)) %>% 
+  mutate(decimalLatitude = round(decimalLatitude), # nmme has one deg resolution 
+         decimalLongitude = round(decimalLongitude)) %>% 
+  distinct()
 
 # extract groupings (species, plots, sites)
 ids <- colnames(wide.data[-c(1, 2)])
@@ -121,6 +137,7 @@ survival.met.inits <- survival.met$met.inits
 
 source("Functions/make_nmme_ens.R")
 start.month <- paste0("20190", nmme.start, "01")
+message("Getting NMME from ", start.month)
 for(s in 1:n.sites){
   met.fx <- make_nmme_ens(var = "tasmax", 
                           start.month = start.month,
@@ -195,29 +212,55 @@ for(i in 1:n.years){
   
   y[i, 1:weeks.per.year[i], 1:ncol(y.table)] <- as.matrix(y.sub[,-c(1,2)]) 
   
-  area.sub <- wide.data.area %>% 
-    filter(year(time) == years[i]) 
-  
-  area[i, 1:weeks.per.year[i], 1:ncol(y.table)] <- as.matrix(area.sub[,-c(1,2)]) 
+  # area.sub <- wide.data.area %>% 
+  #   filter(year(time) == years[i]) 
+  # 
+  # area[i, 1:weeks.per.year[i], 1:ncol(y.table)] <- as.matrix(area.sub[,-c(1,2)]) 
 }
 
 area[is.na(area)] <- 0
 
 # load previous forecast
-load("ModelOut/poisDataArea/BetaSiteCGDDLogit.RData")
-out.mcmc <- samples$samples
+load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvival_2019-14.RData")
+out.mcmc <- samples$samples %>% as.matrix()
+# rm(save.ls)
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
 params <- out.mcmc[,-x.cols]
+states <- out.mcmc[,x.cols]
+rm(out.mcmc)
+
+states <- apply(states, 2, pmax, 0)
+states.mu <- apply(states, 2, mean)
+# states.var <- apply(states, 2, var)
+
+x.init <- array(0, dim = dim(y))
+n.plots <- ncol(y.table)
+for(p in 1:n.plots){
+  for(k in 1:n.years){
+    for(t in 1:weeks.per.year[k]){
+      x.name <- paste0("x[", k, ", ", t, ", ", p, "]")
+      x.init[k, t, p] <- states.mu[x.name]
+    }
+  }
+}
+
 params.mu <- apply(params, 2, mean)
 params.var <- apply(params, 2, var)
 
-beta.mu = params.mu["beta"]
-beta.tau = 1 / params.var["beta"]
-beta.site.mu = params.mu[grep("beta.site[", names(params.mu), fixed = TRUE)]
-tau.beta.site.shape = params.mu["tau.beta.site"]^2 / params.var["tau.beta.site"]
-tau.beta.site.rate = params.mu["tau.beta.site"] / params.var["tau.beta.site"]
-tau.process.shape = params.mu["tau.process"]^2 / params.var["tau.process"]
-tau.process.rate = params.mu["tau.process"] / params.var["tau.process"]
+beta.mu <- params.mu["beta"]
+beta.tau <- 1 / params.var["beta"]
+beta.site.mu <- params.mu[grep("beta.site[", names(params.mu), fixed = TRUE)]
+
+psi.mu <- params.mu["psi"]
+psi.tau <- 1 / params.var["psi"]
+psi.site.mu <- params.mu[grep("psi.site[", names(params.mu), fixed = TRUE)]
+
+tau.beta.site.shape <- params.mu["tau.beta.site"]^2 / params.var["tau.beta.site"]
+tau.beta.site.rate <- params.mu["tau.beta.site"] / params.var["tau.beta.site"]
+tau.psi.site.shape <- params.mu["tau.psi.site"]^2 / params.var["tau.psi.site"]
+tau.psi.site.rate <- params.mu["tau.psi.site"] / params.var["tau.psi.site"]
+tau.process.shape <- params.mu["tau.process"]^2 / params.var["tau.process"]
+tau.process.rate <- params.mu["tau.process"] / params.var["tau.process"]
 
 data <- list(
   y = y,
@@ -228,8 +271,13 @@ data <- list(
   beta.mu = beta.mu,
   beta.tau = beta.tau,
   beta.site.mu = beta.site.mu,
+  psi.mu = 0,
+  psi.tau = 0.1,
+  psi.site.mu = rep(0, n.sites),
   tau.beta.site.shape = tau.beta.site.shape,
   tau.beta.site.rate = tau.beta.site.rate,
+  tau.psi.site.shape = tau.psi.site.shape,
+  tau.psi.site.rate = tau.psi.site.rate,
   tau.process.shape = tau.process.shape,
   tau.process.rate = tau.process.rate
 )
@@ -243,7 +291,7 @@ x.ic <- matrix(runif(n.years*ncol(y), 500, 1000), n.years, ncol(y))
 
 constants <- list(
   n.weeks = weeks.per.year,
-  n.plots = ncol(y.table),
+  n.plots = n.plots,
   x.ic = x.ic, #runif(ncol(y), 0, 1),
   met.mu = 0,
   tau.met = 1 / var(met.list$met.vals, na.rm = TRUE),
@@ -265,6 +313,24 @@ if(year.effect){
   monitor <- c(monitor, "tau.year", "alpha.year")
   constants$year <- year.index
 } 
+
+inits <- function(){list(
+  # phi = array(runif(total.mu.index, 0.95, 1), dim = dim(y)),
+  # pi = array(runif(total.mu.index, 0.4, 0.6), dim = dim(y)),
+  theta = runif(1, 0, 0.1),
+  beta = runif(1, params.mu["beta"]-0.1, params.mu["beta"]+0.1),
+  psi = runif(1, 1, 2),
+  beta.site = runif(n.sites, 0.9, 1.1),
+  psi.site = runif(n.sites, 0.9, 1.1),
+  x = round(x.init),    # + runif(total.mu.index, 0, 5)),
+  y = abs(round(x.init)),    # + jitter(x.init) + runif(total.mu.index, 0, 5)),
+  ex = round(x.init),  # + runif(total.mu.index, 0, 5),
+  ex.z = round(x.init), # + runif(total.mu.index, 6, 8),
+  cgdd = met.inits,
+  tau.beta.site = abs(rnorm(1, params.mu["tau.beta.site"], 0.001)),
+  tau.psi.site = abs(rnorm(1, params.mu["tau.psi.site"], 0.001)),
+  tau.process = abs(rnorm(1, params.mu["tau.process"], 0.001))
+)}
 
 source("Models/yearTimeSeriesCGDDPois.R")
 model.rw <- nimbleModel(model, 
