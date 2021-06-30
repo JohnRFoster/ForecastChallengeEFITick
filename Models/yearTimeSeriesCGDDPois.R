@@ -12,7 +12,7 @@ model <- nimbleCode({
   
   # priors
   # phi ~ dbeta(10, 1) # survival
-  theta ~ dbeta(1, 10) # transition / death
+  
   
   beta ~ dnorm(beta.mu, tau = beta.tau) # intercept; observation model
   psi ~ dnorm(psi.mu, tau = psi.tau) # intercept; survival
@@ -40,10 +40,11 @@ model <- nimbleCode({
   }
   
   # species effect priors
-  # for(spp in 1:n.species){
-  # # alpha.species[spp] ~ dnorm(0, tau = tau.alpha.species) # random intercept by site
-  #   beta.species[spp] ~ dnorm(beta, tau = tau.beta.species)
-  # }
+  for(spp in 1:n.species){
+  # alpha.species[spp] ~ dnorm(0, tau = tau.alpha.species) # random intercept by site
+    # beta.species[spp] ~ dnorm(beta, tau = tau.beta.species)
+    theta[spp] ~ dbeta(1, 10)
+  }
   
   # driver data model
   for(s in 1:n.sites){
@@ -69,7 +70,9 @@ model <- nimbleCode({
       # z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
-        ex[k, t, p] <- x[k, t-1, p] + phi[k, t, site[p]]*x[k, t-1, p] - theta*x[k, t-1, p]
+        ex[k, t, p] <- x[k, t-1, p] + 
+          phi[k, t, site[p]]*x[k, t-1, p] - 
+          theta[species[p]]*x[k, t-1, p]
         x[k, t, p] ~ T(dnorm(ex[k, t, p], tau = tau.process), 0, Inf) 
         
       } # weeks

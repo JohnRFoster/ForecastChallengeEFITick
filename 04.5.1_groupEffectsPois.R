@@ -50,7 +50,7 @@ csv <- "Data/BioTemperatureWeekly.csv"
 met.var <- "cumGDD"
 met.uncertainty <- "cumGDDVariance"
 
-ForecastProject.id <- "BetaSiteCGDDLogitTempSurvivalTruncatedTheta"     # Some ID that applies to a set of forecasts
+ForecastProject.id <- "BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies"     # Some ID that applies to a set of forecasts
 out.dir <- here("ModelOut", group.dir)
 if(!dir.exists(out.dir)) dir.create(out.dir)
 
@@ -125,6 +125,7 @@ met.vals <- met.list$met.vals
 x.var <- met.list$met.uncertainty
 met.inits <- met.list$met.inits
 
+# csv <- "Data/SoilTemperatureWeekly.csv"
 survival.met <- get_met_array(csv, 
                               weeks.per.year,
                               filter.week.met,
@@ -221,8 +222,8 @@ for(i in 1:n.years){
 area[is.na(area)] <- 0
 
 # load previous forecast
-load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvival_2019-14.RData")
-out.mcmc <- samples$samples %>% as.matrix()
+load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncated_2019-14.RData")
+out.mcmc <- save.ls$samples %>% as.matrix()
 # rm(save.ls)
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
 params <- out.mcmc[,-x.cols]
@@ -305,7 +306,7 @@ constants <- list(
 # monitor originally defined in model script sourced at top
 if(site.effect) monitor <- c(monitor, "tau.site", "alpha.site")
 if(species.effect){
-  monitor <- c(monitor, "tau.species", "alpha.species")
+  # monitor <- c(monitor, "tau.species", "alpha.species")
   constants$n.species <- n.species
   constants$species <- species.index
 } 
@@ -317,7 +318,7 @@ if(year.effect){
 inits <- function(){list(
   # phi = array(runif(total.mu.index, 0.95, 1), dim = dim(y)),
   # pi = array(runif(total.mu.index, 0.4, 0.6), dim = dim(y)),
-  theta = runif(1, 0, 0.1),
+  theta = runif(n.species, 0, 0.001),
   beta = runif(1, params.mu["beta"]-0.1, params.mu["beta"]+0.1),
   psi = runif(1, 1, 2),
   beta.site = runif(n.sites, 0.9, 1.1),
