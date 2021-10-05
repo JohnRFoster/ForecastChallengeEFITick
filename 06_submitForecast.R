@@ -15,12 +15,14 @@ library(stringr) # for searching within character strings
 library(here) # for working within subdirectories
 library(parallel) # for running models in parallel
 library(MMWRweek) # to convert year-weeks to date
+library(neon4cast)
 
 efi_server <- TRUE
 
 start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
 met.weeks <- start.epi.weeks[2:length(start.epi.weeks)] - 1
 day.run <- lubridate::today() # the day the script is called
+day.run <- "2021-07-25"
 
 # anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
 if(day.run < "2021-03-31"){ 
@@ -59,6 +61,13 @@ if(!dir.exists(out.dir)) dir.create(out.dir)
 source("Functions/split_species.R")
 data.ixodes <- split_species("Ixodes")
 data.ambloyoma <- split_species("Amblyomma")
+
+plots.ixodes <- data.ixodes %>% 
+  pull(plotID) %>% 
+  unique()
+plots.amblyomma <- data.ambloyoma %>% 
+  pull(plotID) %>% 
+  unique()
 
 source("Functions/make_wide.R")
 wide.data <- make_wide(data.ixodes, data.ambloyoma)
@@ -110,6 +119,14 @@ met.list <- get_met_array(csv,
 met.vals <- met.list$met.vals
 x.var <- met.list$met.uncertainty
 
+# get lat.lon
+ticks <- read_csv("Data/ticks-targets.csv.gz")
+lat.lon <- ticks %>% 
+  select(c(siteID, decimalLatitude, decimalLongitude)) %>% 
+  mutate(decimalLatitude = round(decimalLatitude), # nmme has one deg resolution 
+         decimalLongitude = round(decimalLongitude)) %>% 
+  distinct()
+
 source("Functions/make_nmme_ens.R")
 start.month <- paste0("20190", nmme.start, "01")
 for(s in 1:n.sites){
@@ -120,10 +137,11 @@ for(s in 1:n.sites){
                           gdd = TRUE) %>% as_tibble() %>% 
     filter(epiWeek > end.met.obs & epiWeek <= end.week)
   
-  start.cumgdd <- met.vals[4,3,s]
+  place.start <- min(which(is.na(met.vals[4,,s])))
+  start.cumgdd <- met.vals[4,place.start-1,s]
   
   met.fx.epi <- select(met.fx, epiWeek)
-  met.fx.gdd <- met.fx 
+  met.fx.gdd <- met.fx %>% select(-epiWeek)
   met.fx.cumgdd <- matrix(NA, nrow(met.fx.gdd), ncol(met.fx.gdd))
   for(g in 1:ncol(met.fx.cumgdd)){
     cumgdd <- cumsum(c(start.cumgdd, pull(met.fx.gdd, g)))
@@ -138,7 +156,7 @@ for(s in 1:n.sites){
     group_by(epiWeek) %>% 
     slice(which.min(mean))
   
-  place <- seq(4, length.out = nrow(met.fx.cumgdd), by = 1)
+  place <- seq(place.start, length.out = nrow(met.fx.cumgdd), by = 1)
   met.vals[4, place, s] <- pull(met.fx.cumgdd, "mean")
   x.var[4, place, s] <- pull(met.fx.cumgdd, "variance")
 }
@@ -172,16 +190,24 @@ data <- list(
   x.tau = 1 / x.var
 )
 
+model.dir <- "ModelOut"
+proj.dir <- "poisDataArea"
+post.name <- "BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-28.RData"
 
+load(file.path(model.dir, proj.dir, post.name))
 
-load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncated_2019-14.RData")
-
-out.mcmc <- save.ls$samples
+out.mcmc <- samples$samples
 out.mcmc <- as.matrix(out.mcmc)
+# 
+# thin.seq <- seq.int(1, nrow(out.mcmc), length.out = 10000) %>% round()
+# out.mcmc <- out.mcmc[thin.seq,]
+# save(out.mcmc,
+#      file = "ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-28_Samples_Matrix.RData")
+
 # out.mcmc <- as.matrix(samples$samples)
 
 n.ens <- 2000
-draws <- sample.int(nrow(out.mcmc), n.ens)
+draws <- sample.int(nrow(out.mcmc), n.ens, replace = TRUE)
 
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
 params <- out.mcmc[draws, -x.cols] 
@@ -198,10 +224,10 @@ for(p in 1:ncol(y.table)){
     cgdd.p.k <- met.vals[k, 1:weeks.per.year[k], site.index[p]]
     cgdd.sd <- sqrt(x.var[k, 1:weeks.per.year[k], site.index[p]])
     
-    # na.rows <- which(is.na(cgdd.p.k))
-    # cgdd.p.k[na.rows] <- approx(as.vector(cgdd.p.k), xout = na.rows)$y 
+    na.rows <- which(is.na(cgdd.p.k))
+    cgdd.p.k[na.rows] <- approx(as.vector(cgdd.p.k), xout = na.rows, rule = 2)$y
     
-    cgdd.p.k[is.na(cgdd.p.k)] <- mean(cgdd.p.k, na.rm = TRUE)
+    # cgdd.p.k[is.na(cgdd.p.k)] <- mean(cgdd.p.k, na.rm = TRUE)
     
     for(t in 1:weeks.per.year[k]){
       z.col <- paste0("x[", k, ", ", t, ", ", p, "]")
@@ -274,18 +300,36 @@ fx.submit <- fx.df %>%
 fx.submit$ixodes_scapularis[is.na(fx.submit$ixodes_scapularis)] <- 0
 fx.submit$amblyomma_americanum[is.na(fx.submit$amblyomma_americanum)] <- 0
 
-file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv")
+plot.path <- file.path("plots", date.col[1])
+if(!dir.exists(plot.path)) dir.create(plot.path, recursive = TRUE)
+
+for(j in seq_along(species.vec)){
+  gg <- fx.submit %>% 
+    filter(plotID == plot.vec[j]) %>% 
+    select(time, ensemble, starts_with(species.vec[j])) %>% 
+    rename(fx = starts_with(species.vec[j])) %>% 
+    mutate(time = ymd(time)) %>% 
+    group_by(time) %>% 
+    summarise(upper = quantile(fx, 0.975),
+              med = median(fx),
+              lower = quantile(fx, 0.025)) %>% 
+    ggplot() +
+    aes(x = time) +
+    geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "blue", alpha = 0.6) +
+    geom_line(aes(y = med)) +
+    labs(title = paste(species.vec[j], "at", plot.vec[j]))
+  
+  ggsave(paste0(species.vec[j], plot.vec[j], ".jpeg"), 
+         plot = gg, 
+         path = plot.path)
+}
+
+
+file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv.gz")
 file.dest <- file.path("ForecastSubmissionFiles", file.name)
 write_csv(fx.submit, file.dest)
 
-if(efi_server){
-  library(aws.s3) 
-  
-  Sys.setenv("AWS_DEFAULT_REGION" = "data",
-             "AWS_S3_ENDPOINT" = "ecoforecast.org")
-  
-  aws.s3::put_object(file = file.dest,
-                     object = file.name, 
-                     bucket = "submissions")  
-}
+
+if(efi_server) submit(file.dest)
+
 
