@@ -98,7 +98,10 @@ run_nimble_parallel <- function(cl, model, constants, data, inits, monitor, file
       if(!is.na(file.name)){
         save.ls <- list(samples = as.mcmc.list(out.mcmc),
                         convergence = convergence)
-        save(save.ls, file = file.name)  
+        
+        message("Writing output...")
+        save(save.ls, file = file.name)
+        message("DONE")
       }
     } 
     convergence <- max(g.diag[,"Upper C.I."]) < psrf.max
