@@ -43,19 +43,20 @@ model <- nimbleCode({
   for(spp in 1:n.species){
   # alpha.species[spp] ~ dnorm(0, tau = tau.alpha.species) # random intercept by site
     # beta.species[spp] ~ dnorm(beta, tau = tau.beta.species)
-    theta[spp] ~ dbeta(1, 10)
+    theta[spp] ~ dbeta(theta.alpha[spp], theta.beta[spp])
   }
   
   # driver data model
   for(s in 1:n.sites){
     beta.site[s] ~ dnorm(mean = beta.site.mu[s], tau = tau.beta.site)
     psi.site[s] ~ dnorm(mean = psi.site.mu[s], tau = tau.psi.site)
+    # theta[s] ~ dbeta(1, 10)
     for(k in 1:n.years){
       for(t in 1:n.weeks[k]){
-        cgdd[k, t, s] ~ dunif(0, 6) # driver prior
+        cgdd[k, t, s] ~ dnorm(x.obs.mu, tau = x.obs.tau) # driver prior
         x.obs[k, t, s] ~ dnorm(cgdd[k, t, s], tau = x.tau[k, t, s])
         
-        x.phi[k, t, s] ~ dunif(-4, 8)
+        x.phi[k, t, s] ~ dnorm(proc.met.mu, tau = proc.met.tau)
         x.obs.phi[k, t, s] ~ dnorm(x.phi[k, t, s], tau = x.phi.tau[k, t, s])
       }
     }
@@ -66,7 +67,7 @@ model <- nimbleCode({
     for(k in 1:n.years){
       
       # first latent state of each year gets it's own prior
-      # x[k, 1, p] ~ T(dnorm(x.ic[k, p], tau = 1/10), 0, Inf)
+      x[k, 1, p] ~ T(dnorm(10, tau = 1/10), 0, Inf)
       # z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
@@ -79,6 +80,7 @@ model <- nimbleCode({
     } # years
   } # plots
 })
+
 
 monitor <- c("tau.process", 
              "tau.psi.site",
