@@ -19,7 +19,7 @@ library(MMWRweek) # to convert year-weeks to date
 start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
 met.weeks <- start.epi.weeks[2:length(start.epi.weeks)] - 1
 day.run <- lubridate::today() # the day the script is called
-day.run <- "2021-05-25"
+day.run <- "2021-07-25"
 
 # anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
 if(day.run < "2021-03-31"){ 
@@ -222,9 +222,9 @@ for(i in 1:n.years){
 area[is.na(area)] <- 0
 
 # load previous forecast
-load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncated_2019-14.RData")
-out.mcmc <- save.ls$samples %>% as.matrix()
-# rm(save.ls)
+load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-28.RData")
+out.mcmc <- samples$samples %>% as.matrix()
+rm(samples)
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
 params <- out.mcmc[,-x.cols]
 states <- out.mcmc[,x.cols]
@@ -263,11 +263,30 @@ tau.psi.site.rate <- params.mu["tau.psi.site"] / params.var["tau.psi.site"]
 tau.process.shape <- params.mu["tau.process"]^2 / params.var["tau.process"]
 tau.process.rate <- params.mu["tau.process"] / params.var["tau.process"]
 
+beta_moment_match <- function(param){
+  ex <- mean(param)
+  v <- var(param)
+  alpha <- (((ex^2) * (1-ex)) / v) - ex
+  beta <- (((ex*(1-ex)) / v) - 1) * (1-ex)
+  moments <- list(alpha = alpha, beta = beta)
+  return(moments)
+}
+
+theta.1 <- beta_moment_match(params[,"theta[1]"]) 
+theta.2 <- beta_moment_match(params[,"theta[2]"]) 
+
+theta.alpha <- c(theta.1$alpha, theta.2$alpha)
+theta.beta <- c(theta.1$beta, theta.2$beta)
+
 data <- list(
   y = y,
   x.obs = met.vals,
+  x.obs.mu = mean(met.vals, na.rm = TRUE),
+  x.obs.tau = 1 / var(met.vals, na.rm = TRUE),
   x.tau = 1 / x.var,
   x.obs.phi = survival.met.vals,
+  proc.met.mu = mean(survival.met.vals, na.rm = TRUE),
+  proc.met.tau = 1 / var(survival.met.vals, na.rm = TRUE),
   x.phi.tau = 1 / survival.x.var,
   beta.mu = beta.mu,
   beta.tau = beta.tau,
@@ -275,6 +294,8 @@ data <- list(
   psi.mu = psi.mu,
   psi.tau = psi.tau,
   psi.site.mu = rep(0, n.sites),
+  theta.alpha = theta.alpha,
+  theta.beta = theta.beta,
   tau.beta.site.shape = tau.beta.site.shape,
   tau.beta.site.rate = tau.beta.site.rate,
   tau.psi.site.shape = tau.psi.site.shape,
@@ -288,18 +309,20 @@ mu.inits[is.na(mu.inits)] <- mean(y, na.rm = TRUE)
 
 total.mu.index <- dim(mu.inits)[1]*dim(mu.inits)[2]*dim(mu.inits)[3]
 
-x.ic <- matrix(runif(n.years*ncol(y), 500, 1000), n.years, ncol(y))
+x.ic <- apply(mu.inits, 3, mean)
 
 constants <- list(
   n.weeks = weeks.per.year,
   n.plots = n.plots,
-  x.ic = x.ic, #runif(ncol(y), 0, 1),
+  x.ic = x.ic, 
   met.mu = 0,
   tau.met = 1 / var(met.list$met.vals, na.rm = TRUE),
   n.sites = n.sites,
   n.species = n.species,
   species = species.index,
   n.years = n.years,
+  n.species = n.species,
+  species = species.index,
   site = site.index
 )
 
@@ -315,25 +338,44 @@ if(year.effect){
   constants$year <- year.index
 } 
 
+met.inits[is.na(met.inits)] <- mean(met.inits, na.rm = TRUE)
+survival.met.inits[is.na(survival.met.inits)] <- mean(survival.met.inits, na.rm = TRUE)
+
 inits <- function(){list(
-  # phi = array(runif(total.mu.index, 0.95, 1), dim = dim(y)),
-  # pi = array(runif(total.mu.index, 0.4, 0.6), dim = dim(y)),
-  theta = runif(n.species, 0, 0.001),
-  beta = runif(1, params.mu["beta"]-0.1, params.mu["beta"]+0.1),
-  psi = runif(1, 1, 2),
-  beta.site = runif(n.sites, 0.9, 1.1),
-  psi.site = runif(n.sites, 0.9, 1.1),
-  x = round(x.init),    # + runif(total.mu.index, 0, 5)),
-  y = abs(round(x.init)),    # + jitter(x.init) + runif(total.mu.index, 0, 5)),
+  phi = array(runif(total.mu.index, 0.95, 1), dim = dim(y)),
+  pi = array(runif(total.mu.index, 0.4, 0.9), dim = dim(y)),
+  theta = jitter(params.mu[grep("theta[", names(params.mu), fixed = TRUE)]),
+  beta = rnorm(1, params.mu["beta"], 0.001),
+  psi = rnorm(1, params.mu["psi"], 0.001),
+  beta.site = jitter(params.mu[grep("beta.site[", names(params.mu), fixed = TRUE)]),
+  psi.site = jitter(params.mu[grep("psi.site[", names(params.mu), fixed = TRUE)]),
+  x = round(x.init) + rpois(1, 5),    # + runif(total.mu.index, 0, 5)),
+  y = round(x.init),  # + jitter(x.init) + runif(total.mu.index, 0, 5)),
   ex = round(x.init),  # + runif(total.mu.index, 0, 5),
   ex.z = round(x.init), # + runif(total.mu.index, 6, 8),
   cgdd = met.inits,
+  x.phi = survival.met.inits,
   tau.beta.site = abs(rnorm(1, params.mu["tau.beta.site"], 0.001)),
   tau.psi.site = abs(rnorm(1, params.mu["tau.psi.site"], 0.001)),
   tau.process = abs(rnorm(1, params.mu["tau.process"], 0.001))
 )}
 
 source("Models/yearTimeSeriesCGDDPois.R")
+# c.monitor <- x.monitor <- NA
+# for(p in 1:constants$n.sites){
+#   for(k in 1:constants$n.years){
+#     for(t in 1:constants$n.weeks[k]){
+#       c.node <- paste0("cgdd[", k, ", ", t, ", ", p, "]")
+#       x.node <- paste0("x.phi[", k, ", ", t, ", ", p, "]")
+#       
+#       c.monitor <- c(c.monitor, c.node)
+#       x.monitor <- c(x.monitor, x.node)
+#     }
+#   }
+# }
+# 
+# monitor <- c(monitor, c.monitor[-1], x.monitor[-1])
+
 model.rw <- nimbleModel(model, 
                         constants = constants,
                         data = data,
@@ -373,18 +415,19 @@ samples <- run_nimble_parallel(
     n.iter = 50000,
     max.iter = 3e6,
     thin = 10,
-    check.interval = 2,
+    check.interval = 4,
     check.params.only = TRUE,
     file.name = save.path
   )
 stopCluster(cl)  
 
-
-
-
+message("Writing output...")
 save(samples, model,
      file = save.path)
 
+# if(samples$convergence)
+
+message("DONE")
 
 
 
