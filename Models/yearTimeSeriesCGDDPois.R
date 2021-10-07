@@ -67,7 +67,7 @@ model <- nimbleCode({
     for(k in 1:n.years){
       
       # first latent state of each year gets it's own prior
-      x[k, 1, p] ~ T(dnorm(10, tau = 1/10), 0, Inf)
+      x[k, 1, p] ~ T(dnorm(x.ic.mu[k, p], tau = x.ic.tau[k, p]), 0, Inf)
       # z[k, 1, p] <- max(0, x[k, 1, p])
       
       for(t in 2:n.weeks[k]){
