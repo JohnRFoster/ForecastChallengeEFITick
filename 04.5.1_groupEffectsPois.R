@@ -19,7 +19,7 @@ library(MMWRweek) # to convert year-weeks to date
 start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
 met.weeks <- start.epi.weeks[2:length(start.epi.weeks)] - 1
 day.run <- lubridate::today() # the day the script is called
-day.run <- "2021-07-25"
+# day.run <- "2021-09-25"
 
 # anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
 if(day.run < "2021-03-31"){ 
@@ -137,7 +137,7 @@ survival.x.var <- survival.met$met.uncertainty
 survival.met.inits <- survival.met$met.inits
 
 source("Functions/make_nmme_ens.R")
-start.month <- paste0("20190", nmme.start, "01")
+start.month <- paste0("2019", nmme.start, "01")
 message("Getting NMME from ", start.month)
 for(s in 1:n.sites){
   met.fx <- make_nmme_ens(var = "tasmax", 
@@ -222,7 +222,7 @@ for(i in 1:n.years){
 area[is.na(area)] <- 0
 
 # load previous forecast
-load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-28.RData")
+load("ModelOut/poisDataArea/BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-36.RData")
 out.mcmc <- samples$samples %>% as.matrix()
 rm(samples)
 x.cols <- grep("x[", colnames(out.mcmc), fixed = TRUE)
@@ -232,18 +232,22 @@ rm(out.mcmc)
 
 states <- apply(states, 2, pmax, 0)
 states.mu <- apply(states, 2, mean)
-# states.var <- apply(states, 2, var)
+states.var <- apply(states, 2, var)
 
-x.init <- array(0, dim = dim(y))
+x.init <- x.init.var <- array(0, dim = dim(y))
 n.plots <- ncol(y.table)
 for(p in 1:n.plots){
   for(k in 1:n.years){
     for(t in 1:weeks.per.year[k]){
       x.name <- paste0("x[", k, ", ", t, ", ", p, "]")
       x.init[k, t, p] <- states.mu[x.name]
+      x.init.var[k, t, p] <- states.var[x.name]
     }
   }
 }
+
+x.ic.mu <- x.init[, 1, ]
+x.ic.tau <- 1 / x.init.var[, 1, ]
 
 params.mu <- apply(params, 2, mean)
 params.var <- apply(params, 2, var)
@@ -285,6 +289,8 @@ data <- list(
   x.obs.tau = 1 / var(met.vals, na.rm = TRUE),
   x.tau = 1 / x.var,
   x.obs.phi = survival.met.vals,
+  x.ic.mu = x.ic.mu,
+  x.ic.tau = x.ic.tau,
   proc.met.mu = mean(survival.met.vals, na.rm = TRUE),
   proc.met.tau = 1 / var(survival.met.vals, na.rm = TRUE),
   x.phi.tau = 1 / survival.x.var,
@@ -309,12 +315,9 @@ mu.inits[is.na(mu.inits)] <- mean(y, na.rm = TRUE)
 
 total.mu.index <- dim(mu.inits)[1]*dim(mu.inits)[2]*dim(mu.inits)[3]
 
-x.ic <- apply(mu.inits, 3, mean)
-
 constants <- list(
   n.weeks = weeks.per.year,
   n.plots = n.plots,
-  x.ic = x.ic, 
   met.mu = 0,
   tau.met = 1 / var(met.list$met.vals, na.rm = TRUE),
   n.sites = n.sites,
@@ -361,20 +364,6 @@ inits <- function(){list(
 )}
 
 source("Models/yearTimeSeriesCGDDPois.R")
-# c.monitor <- x.monitor <- NA
-# for(p in 1:constants$n.sites){
-#   for(k in 1:constants$n.years){
-#     for(t in 1:constants$n.weeks[k]){
-#       c.node <- paste0("cgdd[", k, ", ", t, ", ", p, "]")
-#       x.node <- paste0("x.phi[", k, ", ", t, ", ", p, "]")
-#       
-#       c.monitor <- c(c.monitor, c.node)
-#       x.monitor <- c(x.monitor, x.node)
-#     }
-#   }
-# }
-# 
-# monitor <- c(monitor, c.monitor[-1], x.monitor[-1])
 
 model.rw <- nimbleModel(model, 
                         constants = constants,
