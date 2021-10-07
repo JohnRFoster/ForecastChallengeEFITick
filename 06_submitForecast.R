@@ -22,7 +22,7 @@ efi_server <- TRUE
 start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
 met.weeks <- start.epi.weeks[2:length(start.epi.weeks)] - 1
 day.run <- lubridate::today() # the day the script is called
-day.run <- "2021-07-25"
+day.run <- "2021-09-25"
 
 # anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
 if(day.run < "2021-03-31"){ 
@@ -128,7 +128,7 @@ lat.lon <- ticks %>%
   distinct()
 
 source("Functions/make_nmme_ens.R")
-start.month <- paste0("20190", nmme.start, "01")
+start.month <- paste0("2019", nmme.start, "01")
 for(s in 1:n.sites){
   met.fx <- make_nmme_ens(var = "tasmax", 
                           start.month = start.month,
@@ -192,7 +192,7 @@ data <- list(
 
 model.dir <- "ModelOut"
 proj.dir <- "poisDataArea"
-post.name <- "BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-28.RData"
+post.name <- "BetaSiteCGDDLogitTempSurvivalTruncatedThetaSpecies_2019-36.RData"
 
 load(file.path(model.dir, proj.dir, post.name))
 
@@ -325,7 +325,7 @@ for(j in seq_along(species.vec)){
 }
 
 
-file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv.gz")
+file.name <- paste0("ticks-", date.col[1], "-BU_Dem.csv")
 file.dest <- file.path("ForecastSubmissionFiles", file.name)
 write_csv(fx.submit, file.dest)
 
